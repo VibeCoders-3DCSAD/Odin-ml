@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api import anomaly, budget, forecast, health, pfp
-from app.core.config import SERVICE_NAME, SERVICE_VERSION
+from app.core.config import SERVICE_VERSION
 from app.models.registry import ModelRegistry
 
 
@@ -37,4 +37,4 @@ app.include_router(budget.router)
 
 @app.get("/")
 async def root() -> dict[str, str]:
-    return {"message": "Odin ML service is running.", "version": SERVICE_NAME}
+    return {"message": "Odin ML service is running.", "version": SERVICE_VERSION}

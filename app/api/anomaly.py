@@ -54,9 +54,7 @@ def _run(registry: ModelRegistry, request: AnomalyRequest) -> AnomalyResponse:
     scores = [a.anomaly_score for a in anomalous]
     confidence = round(max(scores), 4) if scores else 0.0
 
-    model_version = (
-        anomaly_model.evaluation.get("winner", "unknown") if anomaly_model is not None else "n/a"
-    )
+    model_version = anomaly_model.model_id if anomaly_model is not None else "n/a"
     return AnomalyResponse(
         response_id=str(uuid.uuid4()),
         request_id=str(uuid.uuid4()),
@@ -68,7 +66,7 @@ def _run(registry: ModelRegistry, request: AnomalyRequest) -> AnomalyResponse:
         status=status,
         metadata=ApiMetadata(
             processing_time_ms=round((time.perf_counter() - start) * 1000, 2),
-            model_version="v2.3.0",
+            model_version=model_version,
         ),
     )
 

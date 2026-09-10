@@ -62,6 +62,8 @@ def test_budget_recommend(client):
     assert allocations["essentials_rent"] == 8000.0  # LOCKED
     assert rec["utilization_rate"] > 0.99
     assert rec["feasibility"] in ("FEASIBLE", "REDUCED", "INFEASIBLE")
+    assert body["metadata"]["model_version"] == "budget-scipy_linprog"
+    assert body["metadata"]["strategy_used"] == "tier2_lp"
 
 
 def test_budget_rejects_bad_restriction(client):

@@ -15,9 +15,11 @@ models/
 
 Every family directory is self-contained and uniform:
 
-- `evaluation.json` — raw evaluation results (fold metrics, winner). **Source of truth.**
+- `evaluation.json` — raw evaluation results (fold metrics, winner). **Source of truth** for
+  serving resolution.
 - `evaluation_report.md` — human-readable report, regenerated from `evaluation.json`.
-- `metadata.json` — reproducible provenance + the **winner contract** served at runtime.
+- `metadata.json` — reproducible provenance + the **winner contract**, re-emitted from
+  `evaluation.json` (adds `model_id`, `created_at`, `training_commit`, `training_data_hash`).
 - `metadata.example.json` — schema template for contributors.
 
 Reports and metadata can be re-emitted from an existing `evaluation.json` without retraining:
@@ -60,8 +62,12 @@ Every final model committed to `models/` **must** carry `metadata.json` per this
 ### Winner contract (uniform across families)
 
 `winner`, `winner_artifact`, `winner_reason`, `winner_params`, `threshold` form the **winner
-contract**. The serving layer (`app/models/registry.py`) resolves a family's artifact purely
-from these keys:
+contract**. **`evaluation.json` is the runtime source of truth**: the serving layer
+(`app/models/registry.py`) resolves a family's artifact from it, and
+`training/scripts/regenerate_artifacts.py` re-emits `metadata.json` from it (`model_id` =
+`<family>-<winner>`). Fresh training runs write both; they must never diverge. At request time
+the API reports the resolved winner (e.g. `model_version`: `forecaster-tier3_sarima`,
+`tier_used`/`model_name` for pfp) rather than hardcoded strings.
 
 - `winner_artifact` names the exact artifact file to load (fallback: `winner` + extension).
 - `winner_params` records how the winner was produced.
@@ -70,7 +76,7 @@ from these keys:
 - Budget's "winner" is the deterministic formulation `scipy_linprog`, so
   `fitted: false` and the artifact is `budget_config.json`.
 
-Because resolution is metadata-driven, swapping, adding, or removing a winner is a
+Because resolution is winner-contract-driven, swapping, adding, or removing a winner is a
 **metadata change, not a code change**.
 
 ### Minimum required keys

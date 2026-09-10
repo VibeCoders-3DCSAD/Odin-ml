@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import re
+
 import numpy as np
 
 from app.models.registry import ModuleModel
 from app.schemas.common import ModuleStatus
 from app.schemas.pfp import PFPClassification, PFPClassifyRequest
 from app.services.features import pfp_feature_vector
+
+_TIER_RE = re.compile(r"\btier(\d+)_")
+
+
+def _tier_from_winner(winner: str) -> int:
+    """Parse the tier number from a winner id (``tier3_svm`` -> 3, 0 if unknown)."""
+    match = _TIER_RE.search(winner)
+    return int(match.group(1)) if match else 0
 
 
 def _mdd_label(model_label: str) -> str:
@@ -31,9 +41,9 @@ def _calibrated_scores(classes: np.ndarray, proba: np.ndarray) -> dict[str, floa
     MDD requirement for calibrated scores.
     """
     class_labels = [str(c) for c in classes]
-    stability = sum(p for c, p in zip(class_labels, proba) if c.startswith("Stable"))
-    weight = sum(p for c, p in zip(class_labels, proba) if "Obligated" in c)
-    tolerance = sum(p for c, p in zip(class_labels, proba) if "Tolerant" in c)
+    stability = sum(p for c, p in zip(class_labels, proba, strict=True) if c.startswith("Stable"))
+    weight = sum(p for c, p in zip(class_labels, proba, strict=True) if "Obligated" in c)
+    tolerance = sum(p for c, p in zip(class_labels, proba, strict=True) if "Tolerant" in c)
     return {
         "stability": round(stability, 4),
         "weight": round(weight, 4),
@@ -52,6 +62,7 @@ def classify_standard(model: ModuleModel, request: PFPClassifyRequest) -> PFPCla
     classes = estimator.classes_
 
     scores = _calibrated_scores(classes, proba)
+    winner = str(model.evaluation.get("winner") or model.metadata.get("winner") or "")
     return PFPClassification(
         prediction=_mdd_label(prediction_raw),
         financial_stability_score=scores["stability"],
@@ -59,8 +70,8 @@ def classify_standard(model: ModuleModel, request: PFPClassifyRequest) -> PFPCla
         financial_tolerance_score=scores["tolerance"],
         confidence=round(float(max(proba)), 4),
         status=ModuleStatus.SUCCESS,
-        tier_used=3,
-        model_name="random_forest",
+        tier_used=_tier_from_winner(winner),
+        model_name=winner or "unknown",
     )
 
 

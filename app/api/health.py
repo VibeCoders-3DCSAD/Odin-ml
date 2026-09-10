@@ -31,11 +31,13 @@ async def metrics(registry: ModelRegistry = Depends(get_registry)) -> dict:
         ("pfp", registry.pfp),
         ("forecaster", registry.forecaster),
         ("anomaly", registry.anomaly),
+        ("budget", registry.budget),
     ):
         if module is not None:
             modules[name] = {
-                "model_version": module.evaluation.get("timestamp", ""),
+                "model_version": module.model_id,
                 "winner": module.evaluation.get("winner", ""),
+                "timestamp": module.evaluation.get("timestamp", ""),
             }
     return {
         "service": SERVICE_NAME,

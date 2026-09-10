@@ -29,6 +29,11 @@ def _run(registry: ModelRegistry, request: PFPClassifyRequest) -> PFPClassifyRes
     except Exception as exc:
         raise HTTPException(status_code=500, detail="classification failed") from exc
 
+    model_version = (
+        registry.pfp.model_id
+        if request.classification_mode.value == "STANDARD" and registry.pfp is not None
+        else "questionnaire_rule"
+    )
     return PFPClassifyResponse(
         response_id=str(uuid.uuid4()),
         request_id=request.user_id,
@@ -36,7 +41,7 @@ def _run(registry: ModelRegistry, request: PFPClassifyRequest) -> PFPClassifyRes
         classification=classification,
         metadata=ApiMetadata(
             processing_time_ms=round((time.perf_counter() - start) * 1000, 2),
-            model_version="v1.4.0",
+            model_version=model_version,
             strategy_used=request.classification_mode.value,
         ),
     )

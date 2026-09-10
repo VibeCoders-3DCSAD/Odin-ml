@@ -259,6 +259,6 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 ## Recommended Next Steps
 
-- Add per-module `Dockerfile` + `docker-compose.yml` (ports 8000–8005) matching `../Odin-Paper/docs/ml/1_problem-statement/deployment-architecture.md` v1.1
-- Wire the Budget Optimizer to forecast + PFP outputs (end-to-end `/api/v1/analyze`)
-- Persist prediction history for `/user/{id}/history` and `/latest` endpoints
+- Containerize the service (per-module `Dockerfile` + `docker-compose.yml`, ports 8000–8005) matching `../Odin-Paper/docs/ml/1_problem-statement/deployment-architecture.md` v1.1
+- Wire the Odin app to `/api/v1/anomaly/detect` (alerts) and `/api/v1/budget/recommend` (budget scheduling); integration plans live in the `../Odin/plans/` repo
+- Add auth/rate-limiting to the batch endpoints (`/classify/batch`, `/predict/batch`, `/detect/batch`, `/recommend/batch`) before public exposure

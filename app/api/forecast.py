@@ -54,6 +54,11 @@ def _run(registry: ModelRegistry, request: ForecastRequest) -> ForecastResponse:
 
     assert interval is not None and level is not None
 
+    model_version = (
+        registry.forecaster.model_id
+        if registry.forecaster is not None and status == ModuleStatus.SUCCESS
+        else "cold_start_fallback"
+    )
     return ForecastResponse(
         response_id=str(uuid.uuid4()),
         request_id=request.user_id,
@@ -62,11 +67,11 @@ def _run(registry: ModelRegistry, request: ForecastRequest) -> ForecastResponse:
         forecast_level=request.forecast_level,
         forecast_horizon=request.forecast_horizon,
         confidence_intervals=interval,
-        model_version="v2.4.0",
+        model_version=model_version,
         status=status,
         metadata=ApiMetadata(
             processing_time_ms=round((time.perf_counter() - start) * 1000, 2),
-            model_version="v2.4.0",
+            model_version=model_version,
             strategy_used=level,
         ),
     )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -14,6 +14,7 @@ from app.models.loader import ModelLoader
 PFP_MODULE = "pfp"
 FORECASTER_MODULE = "forecaster"
 ANOMALY_MODULE = "anomaly"
+BUDGET_MODULE = "budget"
 ANOMALY_ARTIFACT = "anomaly_detector.joblib"
 
 
@@ -38,6 +39,23 @@ class ModuleModel:
     evaluation: dict
     feature_columns: list[str]
     threshold: float | None = None
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def model_id(self) -> str:
+        """Serve-time model id from the winner contract.
+
+        Prefers the curated `metadata.json` `model_id` (e.g. ``pfp-tier3_svm``);
+        falls back to a derived ``<module>-<winner>`` so stubs and families
+        without metadata still report a truthful id.
+        """
+        mid = (self.metadata or {}).get("model_id")
+        if isinstance(mid, str) and mid:
+            return mid
+        winner = self.evaluation.get("winner")
+        if isinstance(winner, str) and winner:
+            return f"{self.module}-{winner}"
+        return self.module
 
 
 def _resolve_forecaster_artifact(evaluation: dict, output_dir) -> tuple[str, Any]:
@@ -89,6 +107,7 @@ class ModelRegistry:
         self.pfp: ModuleModel | None = None
         self.forecaster: ModuleModel | None = None
         self.anomaly: ModuleModel | None = None
+        self.budget: ModuleModel | None = None
 
     def load_all(self) -> None:
         self.pfp = self._load_optional(PFP_MODULE, _resolve_pfp_artifact(self._pfp_evaluation()))
@@ -102,12 +121,24 @@ class ModelRegistry:
         except FileNotFoundError as exc:
             logger.warning("anomaly artifacts not found; skipping: %s", exc)
             self.anomaly = None
+        try:
+            self.budget = self._load_budget()
+        except FileNotFoundError as exc:
+            logger.warning("budget metadata not found; skipping: %s", exc)
+            self.budget = None
 
     def _pfp_evaluation(self) -> dict:
         try:
             return self.loader.load_json(PFP_MODULE, "evaluation.json")
         except FileNotFoundError:
             return {}
+
+    def _metadata(self, module: str) -> dict:
+        try:
+            meta = self.loader.load_json(module, "metadata.json")
+        except FileNotFoundError:
+            return {}
+        return meta if isinstance(meta, dict) else {}
 
     def _load_optional(self, module: str, artifact: str) -> ModuleModel | None:
         try:
@@ -123,7 +154,11 @@ class ModelRegistry:
         if not feature_columns and isinstance(model, dict):
             feature_columns = list(model.get("feature_cols", []))
         return ModuleModel(
-            module=module, model=model, evaluation=evaluation, feature_columns=feature_columns
+            module=module,
+            model=model,
+            evaluation=evaluation,
+            feature_columns=feature_columns,
+            metadata=self._metadata(module),
         )
 
     def _load_forecaster(self) -> ModuleModel:
@@ -136,6 +171,7 @@ class ModelRegistry:
             model=model,
             evaluation=evaluation,
             feature_columns=feature_columns,
+            metadata=self._metadata(FORECASTER_MODULE),
         )
 
     def _load_anomaly(self) -> ModuleModel:
@@ -156,6 +192,18 @@ class ModelRegistry:
             evaluation=evaluation,
             feature_columns=feature_columns,
             threshold=threshold,
+            metadata=self._metadata(ANOMALY_MODULE),
+        )
+
+    def _load_budget(self) -> ModuleModel:
+        evaluation = self.loader.load_json(BUDGET_MODULE, "evaluation.json")
+        config = self.loader.load_json(BUDGET_MODULE, "budget_config.json")
+        return ModuleModel(
+            module=BUDGET_MODULE,
+            model=config,
+            evaluation=evaluation,
+            feature_columns=[],
+            metadata=self._metadata(BUDGET_MODULE),
         )
 
     @property
@@ -166,6 +214,7 @@ class ModelRegistry:
                 (PFP_MODULE, self.pfp),
                 (FORECASTER_MODULE, self.forecaster),
                 (ANOMALY_MODULE, self.anomaly),
+                (BUDGET_MODULE, self.budget),
             )
             if module is not None
         ]

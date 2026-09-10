@@ -93,14 +93,15 @@ If a parquet exists, **you do not normally need to rebuild data**; only rebuild 
 - Final artifacts live in top-level `models/<family>/` and **are committed** (with `metadata.json`).
 - Intermediate checkpoints belong in `training/models/` (gitignored).
 - Every training script emits:
-  - `evaluation.json` — fold metrics, aggregate metrics, and the uniform **winner contract** (`winner`, `winner_artifact`, `winner_reason`, `winner_params`, `threshold`).
+  - `evaluation.json` — fold metrics, aggregate metrics, and the uniform **winner contract** (`winner`, `winner_artifact`, `winner_reason`, `winner_params`, `threshold`). **Runtime source of truth** for serving resolution.
   - `evaluation_report.md` — human-readable report.
-  - `metadata.json` — `build_metadata` schema per `models/README.md` (model_id, family, created_at, metrics, decision_rule, framework, feature_columns, artifacts, winner contract).
+  - `metadata.json` — `build_metadata` schema per `models/README.md` (model_id, family, created_at, metrics, decision_rule, framework, feature_columns, artifacts, winner contract). Re-emitted from `evaluation.json`; must not diverge from it.
   - family artifacts (`.joblib` / `.pth` / `anomaly_detector.joblib` / `budget_config.json`).
 - `training/scripts/regenerate_artifacts.py` re-emits reports + metadata from an existing `evaluation.json` without retraining (all four families).
 
 **Registry contract (app/models/registry.py):**
-- `load_all()` reads each family's `evaluation.json` and resolves the **winner artifact from the winner contract** (`_resolve_pfp_artifact`, `_resolve_forecaster_artifact`, `_load_anomaly`) — no hardcoded winner names.
+- `load_all()` reads each family's `evaluation.json` and resolves the **winner artifact from the winner contract** (`_resolve_pfp_artifact`, `_resolve_forecaster_artifact`, `_load_anomaly`) — no hardcoded winner names. `metadata.json` (when present) supplies the serve-time `model_id`.
+- API responses report the resolved winner at request time — `model_version` (`<family>-<winner>`, e.g. `forecaster-tier3_sarima`, `pfp-tier3_svm`, `anomaly-tier1_iqr`) and pfp's `tier_used`/`model_name` — no hardcoded version strings in `app/api/`.
 - pfp is **optional**: missing artifacts → `pfp=None`, PFP `STANDARD` endpoint returns 503 ("pending training"). Questionnaire mode still works.
 - `is_ready` ⇔ forecaster + anomaly loaded. `/ready` lists `loaded_modules`.
 
@@ -200,9 +201,10 @@ Known debt (pre-existing, don't "fix" without a ticket):
 - `app/services/features.py`: mypy import-not-found for `feature_engineering` modules.
 - `budget_service.py`: `tuple[float, None]`, `SIM114/SIM102`; pandas stubs missing.
 
-Smoke test (started API): `/health/live`, `/ready` (expect `["pfp","forecaster","anomaly"]`
-after all families trained), `/forecast/{user_id}` (200 SUCCESS), `/anomaly/{user_id}`
-(200 with `model`/`overspending`/`BOTH`), `/pfp/classify` STANDARD (200 after pfp trained).
+Smoke test (started API): `GET /health` (200), `GET /ready` (expect `["pfp","forecaster","anomaly","budget"]`
+after all families trained), `POST /api/v1/forecast/predict` (200 SUCCESS or FALLBACK),
+`POST /api/v1/anomaly/detect` (200 with `anomalous_transactions`/`overspending_transactions`),
+`POST /api/v1/pfp/classify` QUESTIONNAIRE (200; STANDARD requires pfp artifact).
 
 Also verify the metadata:eval reading is consistent:
 `models/<family>/evaluation.json` `winner` == the artifact actually loaded; run `pytest tests/`.
