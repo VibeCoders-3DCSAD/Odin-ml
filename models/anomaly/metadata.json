@@ -56,7 +56,7 @@
   "decision_rule": "winner must beat the IQR baseline by \u2265 50% F1 improvement and reach F1 \u2265 0.85; otherwise fall back to IQR",
   "winner": "tier1_iqr",
   "winner_artifact": "anomaly_detector.joblib",
-  "winner_reason": "Selected tier1_iqr candidate with best primary metric across temporal folds",
+  "winner_reason": "Best learned tier (tier2_adaptive_threshold) improved F1 by 171.0% over IQR but reached only 0.3718 (target >= 0.85); pre-registered rule failed, retaining the interpretable IQR baseline.",
   "winner_params": {
     "iqr_multiplier": 1.5
   },

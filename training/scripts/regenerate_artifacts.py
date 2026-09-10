@@ -74,6 +74,11 @@ def regenerate_family(family: str) -> Path:
 
     metadata = build_metadata(**family_metadata(family, evaluation, data_sources=data_sources))
     metadata["created_at"] = evaluation["generated_at"]
+    previous = out_dir / "metadata.json"
+    if previous.exists():
+        previous_commit = json.loads(previous.read_text()).get("training_commit")
+        if previous_commit:
+            metadata["training_commit"] = previous_commit
     write_metadata(metadata, out_dir)
     return out_dir / "metadata.json"
 

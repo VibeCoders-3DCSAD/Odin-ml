@@ -13,8 +13,6 @@ from app.schemas.anomaly import (
 )
 from app.services.features import anomaly_feature_vectors
 
-DEFAULT_THRESHOLD = 0.0117
-
 
 def _score(module: ModuleModel, X: np.ndarray) -> np.ndarray:
     model = module.model
@@ -118,7 +116,12 @@ def detect(module: ModuleModel, request: AnomalyRequest) -> list[AnomalousTransa
 
     X = feature_frame[module.feature_columns].values.astype(np.float32)
     scores = _normalize(_score(module, X))
-    threshold = module.threshold if module.threshold is not None else DEFAULT_THRESHOLD
+    if module.threshold is None:
+        raise RuntimeError(
+            "anomaly detector has no operating threshold: evaluation.json is missing "
+            "val_selected_threshold and no fallback is configured"
+        )
+    threshold = module.threshold
 
     results = []
     for i, txn in enumerate(txns_for_scoring):

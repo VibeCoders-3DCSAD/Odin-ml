@@ -465,7 +465,7 @@ def family_metadata(family: str, evaluation: dict, *, data_sources: list[Path]) 
         "winner": winner or None,
         "winner_artifact": _winner_artifact_for(family, evaluation) or None,
         "winner_reason": evaluation.get("winner_reason")
-        or f"Selected {winner or 'final'} candidate with best primary metric across temporal folds",
+        or f"Winner {winner or '(none)'} selected per the pre-registered decision rule",
         "winner_params": evaluation.get("winner_params") or None,
         "threshold": threshold,
         "fitted": family != "budget",

@@ -8,11 +8,11 @@
 
 - **Tier:** tier1_iqr
 - **Artifact:** anomaly_detector.joblib
-- **Reason:** 
+- **Reason:** Best learned tier (tier2_adaptive_threshold) improved F1 by 171.0% over IQR but reached only 0.3718 (target >= 0.85); pre-registered rule failed, retaining the interpretable IQR baseline.
 
 ## Approval Criteria Result
 
-**Result:** PASS — F1 improvement over IQR 100.0% (target ≥ 50%), F1 target ≥ 0.85, passed: True
+**Result:** FAIL — pre-registered fallback to IQR — F1 improvement over IQR 171.0% (target ≥ 50%), F1 target ≥ 0.85, passed: False
 
 ## Aggregate Results
 

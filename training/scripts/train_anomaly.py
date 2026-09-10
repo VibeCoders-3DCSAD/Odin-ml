@@ -678,6 +678,12 @@ def main():
     rule_passed = (f1_improvement >= 0.50) and target_met
 
     if not rule_passed:
+        winner_reason = (
+            f"Best learned tier ({best_model_name}) improved F1 by "
+            f"{f1_improvement * 100:.1f}% over IQR but reached only "
+            f"{best_stats['f1_mean']:.4f} (target >= 0.85); pre-registered rule failed, "
+            f"retaining the interpretable IQR baseline."
+        )
         print(
             f"\n  Decision rule NOT satisfied for {best_model_name}: "
             f"F1 improvement {f1_improvement * 100:.1f}% (need >=50%), "
@@ -686,8 +692,11 @@ def main():
         )
         best_model_name = "tier1_iqr"
         best_stats = summary["tier1_iqr"]
-        f1_improvement = 1.0
-        rule_passed = True
+    else:
+        winner_reason = (
+            f"{best_model_name} improved F1 by {f1_improvement * 100:.1f}% over IQR "
+            f"(target >= 50%) and reached F1 {best_stats['f1_mean']:.4f} (target >= 0.85)."
+        )
 
     print(f"\n  Winner: {best_model_name}")
     print(f"  F1: {best_stats['f1_mean']:.4f} ± {best_stats['f1_std']:.4f}")
@@ -846,6 +855,7 @@ def main():
         "winner": best_model_name,
         "winner_artifact": "anomaly_detector.joblib",
         "winner_params": winner_params,
+        "winner_reason": winner_reason,
         "decision_rule": {
             "f1_target": 0.85,
             "f1_improvement_over_iqr_pct": round(f1_improvement * 100, 1),

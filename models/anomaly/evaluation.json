@@ -39,10 +39,11 @@
   "winner_params": {
     "iqr_multiplier": 1.5
   },
+  "winner_reason": "Best learned tier (tier2_adaptive_threshold) improved F1 by 171.0% over IQR but reached only 0.3718 (target >= 0.85); pre-registered rule failed, retaining the interpretable IQR baseline.",
   "decision_rule": {
     "f1_target": 0.85,
-    "f1_improvement_over_iqr_pct": 100.0,
-    "rule_passed": true
+    "f1_improvement_over_iqr_pct": 171.0,
+    "rule_passed": false
   },
   "fold_summary": {
     "tier1_iqr": {

@@ -14,6 +14,7 @@ def test_anomaly_detect(client):
     assert isinstance(body["anomalous_transactions"], list)
     assert 0.0 <= body["confidence"] <= 1.0
     assert body["status"] in ("SUCCESS", "FALLBACK")
+    assert body["model_version"] == "anomaly-tier1_iqr"
 
 
 def test_anomaly_detect_batch(client):
@@ -47,12 +48,34 @@ def test_anomaly_overspending_detects_excess(client):
     assert body["status"] in ("SUCCESS", "FALLBACK")
 
 
+def test_anomaly_detect_requires_threshold():
+    """Without a registry-supplied threshold, detect() must refuse to score."""
+    import numpy as np
+    import pytest
+    from app.ml.models import IQRDetector
+    from app.models.registry import ModuleModel
+    from app.schemas.anomaly import AnomalyRequest
+    from app.services.anomaly_service import detect
+
+    txns = load_transactions()
+    rng = np.random.RandomState(0)
+    scorer = IQRDetector(iqr_multiplier=1.5).fit(rng.normal(0.0, 1.0, size=(200, 4)))
+    model = ModuleModel(
+        module="anomaly",
+        model=scorer,
+        evaluation={},
+        feature_columns=["mean_income_rolling"],
+    )
+    request = AnomalyRequest(user_id="threshold-test", transactions=txns)
+    with pytest.raises(RuntimeError, match="no operating threshold"):
+        detect(model, request)
+
+
 def test_adaptive_threshold_detector_scores():
     """AdaptiveThresholdDetector (awarded Tier 2 candidate) is an in-scope,
     app-unpicklable scorer: it must live in app.ml.models and behave like the
     other statistical detectors (fit -> [0, )-bounded score)."""
     import numpy as np
-
     from app.ml.models import AdaptiveThresholdDetector, IQRDetector
 
     rng = np.random.RandomState(42)
