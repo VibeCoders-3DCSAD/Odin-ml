@@ -71,6 +71,45 @@ def test_anomaly_detect_requires_threshold():
         detect(model, request)
 
 
+def test_anomaly_detect_scores_are_raw_not_per_request_normalized():
+    """detect() must compare RAW model scores against the raw-calibrated
+    threshold. Per-request min-max normalization was removed because it rescales
+    scores per request and breaks the raw score-vs-threshold unit match."""
+    import numpy as np
+    from app.models.registry import ModuleModel
+    from app.schemas.anomaly import AnomalyRequest
+    from app.services.anomaly_service import detect
+
+    class RawScorer:
+        """Returns fixed raw scores (0.5..1.0) independent of X shape."""
+
+        def __init__(self, n: int):
+            self.values = 0.5 + 0.025 * np.arange(n, dtype=float)
+
+        def score(self, X):
+            return self.values[: len(X)]
+
+    txns = load_transactions(n=20)
+    model = ModuleModel(
+        module="anomaly",
+        model=RawScorer(len(txns)),
+        evaluation={},
+        feature_columns=["mean_income_rolling"],
+        threshold=0.90,
+    )
+    request = AnomalyRequest(user_id="raw-contract-test", transactions=txns)
+    anomalous = detect(model, request)
+
+    # raw units: any score >= 0.90 (raw threshold) is flagged. A per-request
+    # [0,1] renormalization would squash 0.5..1.0 to 0..1 and shift the cutoff,
+    # flagging fewer transactions (2 instead of 4 in this synthetic spread).
+    expected_raw = np.asarray([0.5 + 0.025 * i for i in range(len(txns))])
+    flagged = [a for a in anomalous if a.anomaly_score >= 0.90]
+    assert len(flagged) == int(np.sum(expected_raw >= 0.90))
+    for i, a in enumerate(anomalous):
+        assert round(float(expected_raw[i]), 4) == a.anomaly_score
+
+
 def test_adaptive_threshold_detector_scores():
     """AdaptiveThresholdDetector (awarded Tier 2 candidate) is an in-scope,
     app-unpicklable scorer: it must live in app.ml.models and behave like the

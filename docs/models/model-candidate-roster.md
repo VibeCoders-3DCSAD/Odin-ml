@@ -57,9 +57,11 @@ reduction. Primary metrics: MAE, SMAPE, MDA, RMSE.
 ## 3. Anomaly Detection
 
 **Task:** flag transactions deviating from the user's baseline.
-Pre-registered family-level decision rule: winner must beat the IQR baseline by ≥ 50% F1
-improvement and reach F1 ≥ 0.85; otherwise fall back to IQR. Metrics: Accuracy, Precision,
-Recall, F1 (+ PR-AUC, ROC-AUC).
+Pre-registered family-level decision rule (Option A, revised 2026.09.10 — see
+`docs/thesis/anomaly-decision-rule-rationale.md`): the winner must reach PR-AUC ≥ 1.5× the
+IQR baseline and PR-AUC ≥ 0.15 on the held-out test split, else fall back to IQR. Primary
+metric: PR-AUC (imbalance-safe). Secondary: Accuracy, Precision, Recall, F1 at the F2
+operating point (+ ROC-AUC).
 
 | Candidate | RRL evidence | Why it fits | Verdict |
 |---|---|---|---|

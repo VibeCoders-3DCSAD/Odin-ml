@@ -30,13 +30,6 @@ def _score(module: ModuleModel, X: np.ndarray) -> np.ndarray:
     raise TypeError(f"unsupported anomaly detector type: {type(model)}")
 
 
-def _normalize(scores: np.ndarray) -> np.ndarray:
-    lo, hi = float(scores.min()), float(scores.max())
-    if hi - lo < 1e-8:
-        return np.zeros_like(scores, dtype=float)
-    return (scores - lo) / (hi - lo + 1e-8)
-
-
 def _explanation(txn: dict, score: float, threshold: float) -> tuple[str, list[str]]:
     """Return (reason, feature_contributions) for a single transaction."""
     reason_parts = []
@@ -115,7 +108,7 @@ def detect(module: ModuleModel, request: AnomalyRequest) -> list[AnomalousTransa
         raise ValueError("anomaly detection requires baseline transaction history")
 
     X = feature_frame[module.feature_columns].values.astype(np.float32)
-    scores = _normalize(_score(module, X))
+    scores = _score(module, X)
     if module.threshold is None:
         raise RuntimeError(
             "anomaly detector has no operating threshold: evaluation.json is missing "

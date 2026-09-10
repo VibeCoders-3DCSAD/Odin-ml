@@ -1,18 +1,19 @@
 # Anomaly — Anomaly Detection Evaluation Report
 
-**Generated:** 2026-09-08T03:44:32.752924Z
+**Generated:** 2026-09-10T13:05:14.322720Z
 **Folds:** 5
-**Decision rule:** winner must beat the IQR baseline by ≥ 50% F1 improvement and reach F1 ≥ 0.85; otherwise fall back to IQR
+**Decision rule:** winner must reach PR-AUC ≥ 1.5× the IQR baseline and PR-AUC ≥ 0.15; otherwise fall back to IQR
 
 ## Winner
 
 - **Tier:** tier1_iqr
 - **Artifact:** anomaly_detector.joblib
-- **Reason:** Best learned tier (tier2_adaptive_threshold) improved F1 by 171.0% over IQR but reached only 0.3718 (target >= 0.85); pre-registered rule failed, retaining the interpretable IQR baseline.
+- **Reason:** Option A rule did NOT pass on held-out test evidence: hybrid test PR-AUC 0.0703 vs IQR test PR-AUC 0.0550 (ratio 1.278 >= 1.5; hybrid PR-AUC >= 0.15); gate passed: False Fold-level nomination (tier3_hybrid) does not defeat the 0.15 / 1.5x gates on unseen users (fold-vs-test generalization gap recorded in test_validation); fallback to the interpretable IQR baseline per the pre-registered rule. 
 
 ## Approval Criteria Result
 
-**Result:** FAIL — pre-registered fallback to IQR — F1 improvement over IQR 171.0% (target ≥ 50%), F1 target ≥ 0.85, passed: False
+**Result:** FAIL — pre-registered fallback to IQR — PR-AUC improvement over IQR 27.8% (target ≥ 50%), PR-AUC target ≥ 0.15, passed: False
+Operating point: F2 (β=2) maximized on the held-out val split subject to precision ≥ 0.3.
 
 ## Aggregate Results
 
@@ -94,6 +95,7 @@
 ### Final Test Metrics (threshold selected on held-out val)
 
 - **Operating threshold:** 0.1250
+- **Operating point (val):** F2 = 0.2351, precision = 0.0653, recall = 0.6723, F1 = 0.119
 - **Accuracy:** 0.6934
 - **Precision:** 0.0635
 - **Recall:** 0.6684
@@ -105,10 +107,11 @@
 ### Key Findings
 
 - **Class imbalance:** ~3.0% anomaly rate
-- **Primary metrics are Accuracy/Precision/Recall/F1** (MDD v2.3); PR-AUC/ROC retained as supplementary
+- **Primary ranking metric is PR-AUC** (imbalance-safe, threshold-free; baseline equals the anomaly rate); Accuracy/Precision/Recall/F1 are reported at the chosen operating point
 - **IQR provides interpretable statistical baseline** with per-feature thresholds
 - **Isolation Forest handles unsupervised detection**; contamination set to the observed training anomaly rate
-- **Operating threshold is selected on the held-out val split** to avoid test leakage
+- **Operating threshold selected on the held-out val split** (F2 maximized, β=2, precision ≥ 0.30) to avoid test leakage
+- **Fold-vs-test generalization gap (reported, not hidden):** fold-nominated candidate (tier3_hybrid) reached PR-AUC 0.0703 on the held-out test split vs IQR 0.055 (ratio 1.278; gate passed: False) — below the 0.15 / 1.5× gates, so the pre-registered rule falls back to the IQR baseline
 
 ### Anomaly Types
 

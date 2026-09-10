@@ -2,17 +2,19 @@
 
 Canonical home for the **new-scope** anomaly detector artifact (`metadata.json` + final
 `.joblib`). Current winner: **`tier1_iqr`** (`anomaly_detector.joblib`) — IQR baseline kept
-under the pre-registered fallback rule after adaptive-threshold + hybrid tiers were evaluated
-(see `evaluation.json` / `evaluation_report.md`).
+after Option A rule validation on the held-out test split; the fold-nominated hybrid
+(generalization gap) is documented in `evaluation.json` → `test_validation`
+(see `evaluation.json` / `evaluation_report.md` / `docs/thesis/anomaly-decision-rule-rationale.md`).
 
-## Decision rule (pre-registered)
+## Decision rule (pre-registered, Option A — revised 2026.09.10)
 
-Winner must beat the IQR baseline by **≥ 50% F1** improvement **and** reach **F1 ≥ 0.85**;
-otherwise fall back to IQR.
+Winner must reach **PR-AUC ≥ 1.5× the IQR baseline** **and** **PR-AUC ≥ 0.15** on the
+held-out test split; otherwise fall back to IQR.
 
 ## Primary metrics
 
-- Accuracy, Precision, Recall, F1 (+ PR-AUC, ROC-AUC)
+- PR-AUC (primary, imbalance-safe); Accuracy, Precision, Recall, F1 at the working point
+  (+ ROC-AUC). Operating point: val threshold maximizing F2 subject to precision ≥ 0.30.
 
 ## Target artifact
 

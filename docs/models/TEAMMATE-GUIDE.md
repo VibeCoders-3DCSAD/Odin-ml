@@ -33,7 +33,7 @@ Models are picked under a **pre-registered decision rule** per family, grounded 
 | :--- | :--- | :--- |
 | **PFP** (8-class profile) | Full light tier set on this CPU box: majority, rule-based (Tier 1), logistic, Gaussian NB, RF, calibrated SVM, xgboost | Winner must beat Tier 1 by **> 2 pts Macro-F1**, else fall back to Tier 1. Winner artifact resolved by name at serve time. |
 | **Forecaster** | Pooled user-normalized **ARIMA** (`tier3_arima`, 9.40% MAPE vs 37.45% naive, −74.9%), plus **SARIMA** variant (`tier3_sarima`, degrades to plain ARIMA when pool < 24 months) | Learned model must cut MAPE **≥ 20%** vs naive, else naive. Heavy neural/RF tiers are CPU-heavy — see §8. |
-| **Anomaly** | IQR baseline (Tier 1); **adaptive threshold**, Isolation Forest, One-Class SVM, Autoencoder (Tier 2); **HybridEnsemble** (Tier 3) | Winner must beat IQR by **≥ 50% F1 AND F1 ≥ 0.85**, else fall back to IQR. Pre-registered fallback is expected. |
+| **Anomaly** | IQR baseline (Tier 1); **adaptive threshold**, Isolation Forest, One-Class SVM, Autoencoder (Tier 2); **HybridEnsemble** (Tier 3) | Winner must reach **PR-AUC ≥ 1.5× IQR** and **PR-AUC ≥ 0.15** on the held-out test split, else fall back to IQR (Option A, revised 2026.09.10 — see `docs/thesis/anomaly-decision-rule-rationale.md`). Serving compares **raw** scores vs raw threshold. |
 
 Hybrid ensemble and adaptive threshold are **back on the table** (they were briefly
 dropped; the roster/report still list them under Tier 3 / Tier 2). Do not remove them

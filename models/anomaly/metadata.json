@@ -1,7 +1,7 @@
 {
   "model_id": "anomaly-tier1_iqr",
   "family": "anomaly",
-  "created_at": "2026-09-08T03:44:32.752924Z",
+  "created_at": "2026-09-10T13:05:14.322720Z",
   "training_commit": "9aa973a",
   "training_data_hash": "76a0515e9985d9f504d11250819400efa647a99d1c90c95507edf21888130d5a",
   "framework": "scikit-learn",
@@ -38,25 +38,45 @@
   ],
   "metrics": {
     "primary": {
-      "name": "f1",
-      "value": 0.1159,
+      "name": "pr_auc",
+      "value": 0.055,
       "threshold": 0.125,
+      "operating_point": {
+        "threshold": 0.125,
+        "precision": 0.0653,
+        "recall": 0.6723,
+        "f1": 0.119,
+        "f2": 0.2351,
+        "beta": 2.0,
+        "min_precision": 0.3,
+        "precision_floor_met": false,
+        "accuracy": 0.7004,
+        "tp": 4319,
+        "fp": 61845,
+        "fn": 2105,
+        "tn": 145149,
+        "n_positives": 6424,
+        "n_predictions_positive": 66164
+      },
       "folds": 5
     },
     "secondary": {
       "accuracy": 0.6934,
       "precision": 0.0635,
       "recall": 0.6684,
-      "pr_auc": 0.055,
+      "f1": 0.1159,
       "roc_auc": 0.7084,
+      "pr_auc_baseline": 0.03008114084401469,
+      "fold_pr_auc_mean": 0.0635,
+      "fold_pr_auc_std": 0.0031,
       "fold_f1_mean": 0.1372,
       "fold_f1_std": 0.0085
     }
   },
-  "decision_rule": "winner must beat the IQR baseline by \u2265 50% F1 improvement and reach F1 \u2265 0.85; otherwise fall back to IQR",
+  "decision_rule": "winner must reach PR-AUC \u2265 1.5\u00d7 the IQR baseline and PR-AUC \u2265 0.15; otherwise fall back to IQR",
   "winner": "tier1_iqr",
   "winner_artifact": "anomaly_detector.joblib",
-  "winner_reason": "Best learned tier (tier2_adaptive_threshold) improved F1 by 171.0% over IQR but reached only 0.3718 (target >= 0.85); pre-registered rule failed, retaining the interpretable IQR baseline.",
+  "winner_reason": "Option A rule did NOT pass on held-out test evidence: hybrid test PR-AUC 0.0703 vs IQR test PR-AUC 0.0550 (ratio 1.278 >= 1.5; hybrid PR-AUC >= 0.15); gate passed: False Fold-level nomination (tier3_hybrid) does not defeat the 0.15 / 1.5x gates on unseen users (fold-vs-test generalization gap recorded in test_validation); fallback to the interpretable IQR baseline per the pre-registered rule. ",
   "winner_params": {
     "iqr_multiplier": 1.5
   },

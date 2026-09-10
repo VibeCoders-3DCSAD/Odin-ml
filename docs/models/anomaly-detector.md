@@ -70,11 +70,21 @@ The training pipeline tested multiple approaches in tiers:
 | 2 | Adaptive Threshold, Isolation Forest, One-Class SVM, Autoencoder | Four different learned approaches that try to model the user's "normal" and detect deviations from it. |
 | 3 | Hybrid Ensemble | Average the scores of multiple models for a more robust signal. |
 
-A **decision rule** enforced at training time: the winner must beat IQR by **at least 50% in F1 score** AND reach an **F1 of at least 0.85**. This is a strict bar — it means the learned models must be substantially better than the simple statistical rule to earn the right to replace it.
+A **decision rule** enforced at training time (revised 2026.09.10 under Option A — see
+`docs/thesis/anomaly-decision-rule-rationale.md`): the winner must reach **≥ 1.5× the IQR
+baseline's PR-AUC** AND a **PR-AUC of at least 0.15**; otherwise fall back to IQR. The rule
+is applied to the **held-out test split** (not just folds), so a candidate that looks good
+on training folds must also prove it on unseen users. Operating point: the validation
+threshold maximizing **F2** subject to **precision ≥ 0.30**.
 
 **Winner: Tier 1 IQR** — the simple Inter-Quartile Range rule. Here's what happened honestly:
 
-The learned models (Isolation Forest, One-Class SVM, Autoencoder, Ensemble) were trained but **did not meet the acceptance threshold**. The IQR baseline, despite its simplicity, performed well enough on the full 24-feature input that the learned models couldn't justify replacing it under the strict rules. This is a common outcome in anomaly detection: because "anomalous" events are rare, complex models can struggle to learn the signal, while a robust statistical rule holds up surprisingly well.
+The learned models (Isolation Forest, One-Class SVM, Autoencoder, Ensemble) showed the best
+PR-AUC on the training folds (hybrid 0.2753 vs IQR 0.0635) — a promising ranking gain. But
+on the **held-out test split that gain collapsed**: the hybrid reached PR-AUC 0.0703 vs IQR
+0.0550 (~1.28×, below the 1.5× gate) and did not reach 0.15. The pre-registered rule
+therefore falls back to IQR, and this **fold-vs-test generalization gap is reported in
+`models/anomaly/evaluation.json` → `test_validation`, not hidden**.
 
 **Performance (honest state):**
 
@@ -85,6 +95,7 @@ The learned models (Isolation Forest, One-Class SVM, Autoencoder, Ensemble) were
 | Precision | 0.064 | Only 6.4% of flagged transactions are actually anomalous. |
 | Recall | 0.668 | It catches about 67% of real anomalies. |
 | ROC-AUC | 0.708 | Moderate discrimination ability. |
+| PR-AUC | 0.055 | Low, but the primary ranking metric (imbalance-safe; random = 3%). |
 
 The low F1 is partly explained by the **synthetic anomaly injection** used during training — anomalies are planted in the data in specific patterns (amount spikes, new merchants, frequency changes, category mismatches) that may not perfectly reflect real-world fraud. As the app collects real user data, retraining is expected to improve these numbers significantly.
 
@@ -95,8 +106,8 @@ When a new transaction arrives:
 1. **Compute the 24 features** — the 10 baseline features from the user's accumulated history, and the 14 detection features comparing this specific transaction against that baseline.
 2. **Score the transaction** through the IQR detector:
    - For each feature, the IQR rule checks if the value falls outside the range `[Q1 − 1.5×IQR, Q3 + 1.5×IQR]` (the standard "box plot outlier" boundaries).
-   - The overall anomaly score is a **min-max normalized** combination of these per-feature deviations.
-3. **Apply the threshold** — transactions with scores above the threshold (stored in the model artifact, default 0.0117) are flagged as anomalous.
+   - The overall anomaly score is a **per-feature deviation** combined into one raw score.
+3. **Apply the threshold** — transactions with raw scores above the threshold (stored in the model artifact, calibrated on validation; current 0.125) are flagged as anomalous. Scores are compared in **raw units** — no per-request re-normalization, so the threshold's calibration units match the served scores.
 4. **Generate an explanation** — the detector doesn't just say "anomalous," it explains *why*:
    - "Unusual amount" — the transaction amount is much higher/lower than normal.
    - "Novel category" — the user has never (or rarely) spent in this category.

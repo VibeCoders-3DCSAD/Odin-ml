@@ -17,6 +17,9 @@ from typing import Any
 
 from app.ml.metadata import framework_version_of
 
+PR_AUC_TARGET = 0.15
+PR_AUC_MIN_TIMES_IQR = 1.5
+
 PFP_CLASSES = (
     "Stable/Obligated/Tolerant",
     "Stable/Obligated/At-Risk",
@@ -82,6 +85,13 @@ def _decision_rule_for(family: str, evaluation: dict) -> str:
         return f"winner must beat the rule-based Tier 1 by > {margin} Macro-F1, else fall back to Tier 1"
     if family == "anomaly":
         rule = evaluation.get("decision_rule")
+        if isinstance(rule, dict) and rule.get("metric") == "pr_auc":
+            ratio = rule.get("pr_auc_improvement_ratio", 1.5)
+            target = rule.get("pr_auc_target", 0.15)
+            return (
+                f"winner must reach PR-AUC ≥ {ratio:g}× the IQR baseline "
+                f"and PR-AUC ≥ {target:g}; otherwise fall back to IQR"
+            )
         target = 0.85 if not isinstance(rule, dict) else rule.get("f1_target", 0.85)
         return (
             f"winner must beat the IQR baseline by ≥ 50% F1 improvement and reach "
@@ -281,32 +291,76 @@ def _anomaly_sections(evaluation: dict) -> tuple[str, str, list[str], str]:
 
     drule = evaluation.get("decision_rule", {})
     rule_passed = drule.get("rule_passed") if isinstance(drule, dict) else None
-    approval = [
-        (
-            f"**Result:** {'PASS' if rule_passed else 'FAIL — pre-registered fallback to IQR'} — "
-            f"F1 improvement over IQR "
-            f"{drule.get('f1_improvement_over_iqr_pct', 0)}% (target ≥ 50%), "
-            f"F1 target ≥ 0.85, passed: {rule_passed}"
-        )
-    ]
+    if isinstance(drule, dict) and drule.get("metric") == "pr_auc":
+        approval = [
+            (
+                f"**Result:** {'PASS' if rule_passed else 'FAIL — pre-registered fallback to IQR'} — "
+                f"PR-AUC improvement over IQR "
+                f"{drule.get('pr_auc_improvement_over_iqr_pct', 0)}% (target ≥ 50%), "
+                f"PR-AUC target ≥ {drule.get('pr_auc_target', 0.15)}, "
+                f"passed: {rule_passed}"
+            ),
+            (
+                f"Operating point: F2 (β=2) maximized on the held-out val split subject to "
+                f"precision ≥ {drule.get('operating_point', {}).get('min_precision', 0.30)}."
+            ),
+        ]
+    else:
+        approval = [
+            (
+                f"**Result:** {'PASS' if rule_passed else 'FAIL — pre-registered fallback to IQR'} — "
+                f"F1 improvement over IQR "
+                f"{drule.get('f1_improvement_over_iqr_pct', 0)}% (target ≥ 50%), "
+                f"F1 target ≥ 0.85, passed: {rule_passed}"
+            )
+        ]
 
     final = evaluation.get("final_test_metrics", {})
     key_findings = [
         f"- **Class imbalance:** ~{evaluation.get('anomaly_rate_train', 0) * 100:.1f}% anomaly rate",
-        "- **Primary metrics are Accuracy/Precision/Recall/F1** (MDD v2.3); "
-        "PR-AUC/ROC retained as supplementary",
+        (
+            "- **Primary ranking metric is PR-AUC** (imbalance-safe, threshold-free; "
+            "baseline equals the anomaly rate); Accuracy/Precision/Recall/F1 are reported at "
+            "the chosen operating point"
+        ),
         "- **IQR provides interpretable statistical baseline** with per-feature thresholds",
         (
             "- **Isolation Forest handles unsupervised detection**; contamination set to the "
             "observed training anomaly rate"
         ),
-        "- **Operating threshold is selected on the held-out val split** to avoid test leakage",
+        (
+            "- **Operating threshold selected on the held-out val split** (F2 maximized, "
+            "β=2, precision ≥ 0.30) to avoid test leakage"
+        ),
     ]
+    tv = evaluation.get("test_validation") or {}
+    if tv.get("measured"):
+        key_findings.append(
+            "- **Fold-vs-test generalization gap (reported, not hidden):** "
+            f"fold-nominated candidate ({evaluation.get('fold_nominated_winner', '—')}) "
+            f"reached PR-AUC {tv.get('pr_auc', '—')} on the held-out test split vs IQR "
+            f"{tv.get('iqr_test_pr_auc', '—')} (ratio {tv.get('improvement_ratio', '—')}; "
+            f"gate passed: {tv.get('gate_passed')}) — below the "
+            f"{PR_AUC_TARGET} / {PR_AUC_MIN_TIMES_IQR}× gates, so the pre-registered "
+            f"rule falls back to the IQR baseline"
+        )
+    elif tv:
+        key_findings.append(
+            f"- **Test validation incomplete:** {tv.get('reason', 'no validation recorded')}"
+        )
+    sup_op = evaluation.get("val_operating_point", {})
     supp = "\n".join(
         [
             "### Final Test Metrics (threshold selected on held-out val)",
             "",
             f"- **Operating threshold:** {evaluation.get('val_selected_threshold', 0):.4f}",
+            (
+                f"- **Operating point (val):** F2 = {sup_op.get('f2', '—')}, "
+                f"precision = {sup_op.get('precision', '—')}, "
+                f"recall = {sup_op.get('recall', '—')}, F1 = {sup_op.get('f1', '—')}"
+                if sup_op
+                else ""
+            ),
             f"- **Accuracy:** {final.get('accuracy', 0):.4f}",
             f"- **Precision:** {final.get('precision', 0):.4f}",
             f"- **Recall:** {final.get('recall', 0):.4f}",
@@ -402,17 +456,21 @@ def family_metadata(family: str, evaluation: dict, *, data_sources: list[Path]) 
         stats = summary.get(winner, {})
         metrics = {
             "primary": {
-                "name": "f1",
-                "value": final.get("f1"),
+                "name": "pr_auc",
+                "value": final.get("pr_auc"),
                 "threshold": evaluation.get("val_selected_threshold"),
+                "operating_point": evaluation.get("val_operating_point"),
                 "folds": len(evaluation.get("fold_results", {})),
             },
             "secondary": {
                 "accuracy": final.get("accuracy"),
                 "precision": final.get("precision"),
                 "recall": final.get("recall"),
-                "pr_auc": final.get("pr_auc"),
+                "f1": final.get("f1"),
                 "roc_auc": final.get("roc_auc"),
+                "pr_auc_baseline": evaluation.get("anomaly_rate_test"),
+                "fold_pr_auc_mean": stats.get("pr_auc_mean"),
+                "fold_pr_auc_std": stats.get("pr_auc_std"),
                 "fold_f1_mean": stats.get("f1_mean"),
                 "fold_f1_std": stats.get("f1_std"),
             },

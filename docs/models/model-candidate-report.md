@@ -118,10 +118,12 @@ lighter tier fails the MAPE-reduction rule.
 
 **Task:** flag transactions deviating from the user's baseline.
 
-**Metrics (Phase 7):** Accuracy, Precision, Recall, F1 (+ PR-AUC, ROC-AUC).
+**Metrics (Phase 7, revised):** PR-AUC (primary, imbalance-safe); Accuracy, Precision,
+Recall, F1 at the F2/val operating point (+ ROC-AUC).
 
-**Decision rule (pre-registered):** winner must beat the IQR baseline by **≥ 50% F1**
-improvement and reach **F1 ≥ 0.85**; otherwise fall back to IQR.
+**Decision rule (pre-registered, Option A — revised 2026.09.10):** the winner must reach
+**PR-AUC ≥ 1.5× the IQR baseline** and **PR-AUC ≥ 0.15** on the held-out test split;
+otherwise fall back to IQR (see `docs/thesis/anomaly-decision-rule-rationale.md`).
 
 | Rank | Candidate | Weight class | RRL evidence | Verdict |
 | :--- | :--- | :--- | :--- | :--- |

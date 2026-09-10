@@ -16,11 +16,14 @@ as "research only" in the roster and are not trained in the default scope.
 
 Evaluation:
   - 5-fold expanding window (temporal_folds.json)
-  - Primary metrics: Accuracy, Precision, Recall, F1 (MDD v2.3)
-  - Supplementary: PR-AUC, ROC-AUC
-  - Operating threshold selected on held-out val split (no test leakage)
-  - Decision rule: winner must beat IQR baseline by 50% F1 improvement
-    and reach F1 >= 0.85; otherwise fall back to the IQR baseline
+  - Primary ranking metric: PR-AUC (imbalance-safe, threshold-free; baseline
+    equals the anomaly rate). Supplementary: ROC-AUC, and Accuracy/Precision/
+    Recall/F1 at the chosen operating point.
+  - Operating point selected on held-out val split (no test leakage):
+    maximize F2 (beta=2, recall-prioritized) subject to precision >= 0.30.
+  - Decision rule (Option A, see docs/thesis/anomaly-decision-rule-rationale.md):
+    adopt the best-learned tier iff PR-AUC(winner) >= 1.5 x PR-AUC(IQR) and
+    PR-AUC(winner) >= 0.15; otherwise fall back to the IQR baseline.
 
 Usage:
     python training/scripts/train_anomaly.py --input training/datasets/anomaly/ --output models/anomaly/
@@ -236,6 +239,72 @@ def compute_baseline_metrics(y_true: np.ndarray):
     """Tier 0: always predict majority class (all normal)."""
     y_scores = np.zeros_like(y_true, dtype=float)
     return compute_metrics(y_true, y_scores)
+
+
+def _select_operating_point(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+    *,
+    min_precision: float = 0.30,
+    beta: float = 2.0,
+) -> tuple[float, dict]:
+    """Choose the val operating threshold that maximizes F-beta subject to a
+    precision floor (Option A operating-point policy).
+
+    Returns ``(threshold, point_metrics)`` where ``point_metrics`` carries the
+    precision/recall/F1/F-beta/accuracy at the chosen threshold.
+    """
+    from sklearn.metrics import precision_recall_curve
+
+    precisions, recalls, thresholds = precision_recall_curve(y_true, y_scores)
+    beta2 = float(beta) ** 2
+    fbeta = (1 + beta2) * (precisions * recalls) / (
+        beta2 * precisions + recalls + 1e-12
+    )
+
+    # The PR-curve terminal point (precision=1.0, recall=0.0) is not an
+    # operating point — it flags nothing. Exclude recall==0 so a detector whose
+    # precision floor is unreachable falls back to argmax F-beta over real
+    # operating points instead of "flag everything" (threshold = min score).
+    real = np.asarray(recalls) > 0
+    eligible = np.where(real & (np.asarray(precisions) >= min_precision))[0]
+    if len(eligible) > 0:
+        precision_floor_met = True
+        best_idx = int(eligible[np.argmax(fbeta[eligible])])
+    else:  # no point meets the floor: fall back to argmax F-beta over real points
+        precision_floor_met = False
+        eligible = np.where(real)[0]
+        best_idx = int(eligible[np.argmax(fbeta[eligible])])
+    threshold = (
+        float(thresholds[best_idx])
+        if best_idx < len(thresholds)
+        else float(y_scores.min())
+    )  # PR curve terminal point carries no threshold
+    precision = float(precisions[best_idx])
+    recall = float(recalls[best_idx])
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-12)
+    f2 = float(fbeta[best_idx])
+    y_pred = (y_scores >= threshold).astype(int)
+    tp = int(np.sum((y_pred == 1) & (y_true == 1)))
+    tn = int(np.sum((y_pred == 0) & (y_true == 0)))
+    accuracy = (tp + tn) / len(y_true) if len(y_true) else 0.0
+    return threshold, {
+        "threshold": round(threshold, 4),
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "f2": round(f2, 4),
+        "beta": beta,
+        "min_precision": min_precision,
+        "precision_floor_met": precision_floor_met,
+        "accuracy": round(accuracy, 4),
+        "tp": tp,
+        "fp": int(np.sum((y_pred == 1) & (y_true == 0))),
+        "fn": int(np.sum((y_pred == 0) & (y_true == 1))),
+        "tn": tn,
+        "n_positives": int(np.sum(y_true)),
+        "n_predictions_positive": int(np.sum(y_pred)),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -654,52 +723,55 @@ def main():
         "pr_auc_std": 0.0,
     }
 
-    # Print summary table (F1 is primary per MDD v2.3)
+    # Print summary table (PR-AUC is primary per Option A)
     print("\n  Model Summary (mean ± std across folds):")
     print(f"  {'Model':<28} {'F1':>12} {'Acc':>12} {'PR-AUC':>12}")
     print(f"  {'-' * 66}")
-    for name, stats in sorted(summary.items(), key=lambda x: -x[1].get("f1_mean", 0)):
+    for name, stats in sorted(summary.items(), key=lambda x: -x[1].get("pr_auc_mean", 0)):
         f1_str = f"{stats['f1_mean']:.4f} ± {stats['f1_std']:.4f}"
         acc_str = f"{stats['accuracy_mean']:.4f}"
         pr_str = f"{stats['pr_auc_mean']:.4f} ± {stats['pr_auc_std']:.4f}"
         print(f"  {name:<28} {f1_str:>12} {acc_str:>12} {pr_str:>12}")
 
-    # Select winner by primary metric (F1), then enforce pre-registered rule:
-    # winner must beat IQR baseline by >=50% F1 improvement AND reach F1 >= 0.85
+    # Select winner by primary ranking metric (PR-AUC), then enforce the
+    # pre-registered Option A rule (see docs/thesis/anomaly-decision-rule-rationale.md):
+    # winner must reach PR-AUC >= 1.5 x IQR PR-AUC AND PR-AUC >= 0.15
     best_model_name = max(
-        [k for k in summary if k != "baseline"], key=lambda k: summary[k]["f1_mean"]
+        [k for k in summary if k != "baseline"], key=lambda k: summary[k]["pr_auc_mean"]
     )
     best_stats = summary[best_model_name]
     iqr_stats = summary["tier1_iqr"]
-    f1_improvement = (best_stats["f1_mean"] - iqr_stats["f1_mean"]) / max(
-        iqr_stats["f1_mean"], 1e-8
+    pr_auc_improvement = (best_stats["pr_auc_mean"] - iqr_stats["pr_auc_mean"]) / max(
+        iqr_stats["pr_auc_mean"], 1e-8
     )
-    target_met = best_stats["f1_mean"] >= 0.85
-    rule_passed = (f1_improvement >= 0.50) and target_met
+    target_met = best_stats["pr_auc_mean"] >= 0.15
+    rule_passed = (pr_auc_improvement >= 0.50) and target_met
 
     if not rule_passed:
         winner_reason = (
-            f"Best learned tier ({best_model_name}) improved F1 by "
-            f"{f1_improvement * 100:.1f}% over IQR but reached only "
-            f"{best_stats['f1_mean']:.4f} (target >= 0.85); pre-registered rule failed, "
+            f"Best learned tier ({best_model_name}) improved PR-AUC by "
+            f"{pr_auc_improvement * 100:.1f}% over IQR but reached only "
+            f"{best_stats['pr_auc_mean']:.4f} (target >= 0.15); pre-registered rule failed, "
             f"retaining the interpretable IQR baseline."
         )
         print(
             f"\n  Decision rule NOT satisfied for {best_model_name}: "
-            f"F1 improvement {f1_improvement * 100:.1f}% (need >=50%), "
-            f"F1 {best_stats['f1_mean']:.4f} (need >=0.85). "
+            f"PR-AUC improvement {pr_auc_improvement * 100:.1f}% (need >=50%), "
+            f"PR-AUC {best_stats['pr_auc_mean']:.4f} (need >=0.15). "
             f"Falling back to interpretable IQR baseline."
         )
         best_model_name = "tier1_iqr"
         best_stats = summary["tier1_iqr"]
     else:
         winner_reason = (
-            f"{best_model_name} improved F1 by {f1_improvement * 100:.1f}% over IQR "
-            f"(target >= 50%) and reached F1 {best_stats['f1_mean']:.4f} (target >= 0.85)."
+            f"{best_model_name} improved PR-AUC by {pr_auc_improvement * 100:.1f}% over IQR "
+            f"(target >= 50%) and reached PR-AUC {best_stats['pr_auc_mean']:.4f} "
+            f"(target >= 0.15); the recall-prioritized operating point is selected on the "
+            f"held-out val split maximizing F2 subject to precision >= 0.30."
         )
 
     print(f"\n  Winner: {best_model_name}")
-    print(f"  F1: {best_stats['f1_mean']:.4f} ± {best_stats['f1_std']:.4f}")
+    print(f"  PR-AUC: {best_stats['pr_auc_mean']:.4f} ± {best_stats['pr_auc_std']:.4f}")
 
     # Retrain winner on full training data, select threshold on val, eval on test
     print(f"\n[4/6] Retraining {best_model_name} on full training set...")
@@ -811,20 +883,20 @@ def main():
         score_fn = lambda X: np.zeros(X.shape[0], dtype=float)
         winner_params = {}
 
-    # Select operating threshold on held-out val split (no test leakage)
+    # Select operating threshold on held-out val split (no test leakage):
+    # maximize F2 (recall-prioritized) subject to precision >= 0.30 (Option A)
     val_scores = score_fn(X_val_final)
-    precisions, recalls, thresholds = precision_recall_curve(y_val_final, val_scores)
-    f1_curve = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
-    best_idx = int(np.argmax(f1_curve))
-    threshold = float(thresholds[best_idx]) if best_idx < len(thresholds) else 0.5
+    threshold, op_point = _select_operating_point(
+        y_val_final, val_scores, min_precision=0.30, beta=2.0
+    )
 
     test_scores = score_fn(X_test_final)
     val_metrics = compute_metrics(y_val_final, val_scores, threshold=threshold)
     final_metrics = compute_metrics(y_test_final, test_scores, threshold=threshold)
     print(f"  Val-selected threshold: {threshold:.4f}")
     print(
-        f"  Val F1 @ threshold: {val_metrics['f1']:.4f} "
-        f"(P={val_metrics['precision']:.4f}, R={val_metrics['recall']:.4f})"
+        f"  Val F2 @ threshold: {op_point['f2']:.4f} "
+        f"(P={op_point['precision']:.4f}, R={op_point['recall']:.4f}, F1={op_point['f1']:.4f})"
     )
     print(f"  Test F1: {final_metrics['f1']:.4f}")
     print(f"  Test Precision: {final_metrics['precision']:.4f}")
@@ -854,15 +926,23 @@ def main():
         "anomaly_rate_test": float(test_df[LABEL_COL].mean()),
         "winner": best_model_name,
         "winner_artifact": "anomaly_detector.joblib",
-        "winner_params": winner_params,
+"winner_params": winner_params,
         "winner_reason": winner_reason,
         "decision_rule": {
-            "f1_target": 0.85,
-            "f1_improvement_over_iqr_pct": round(f1_improvement * 100, 1),
+            "metric": "pr_auc",
+            "pr_auc_target": 0.15,
+            "pr_auc_improvement_ratio": 1.5,
+            "pr_auc_improvement_over_iqr_pct": round(pr_auc_improvement * 100, 1),
             "rule_passed": rule_passed,
+            "operating_point": {
+                "method": "F2 maximization with precision floor",
+                "beta": 2.0,
+                "min_precision": 0.30,
+                "selected_on": "held-out val split",
+            },
         },
-        "fold_summary": summary,
         "val_selected_threshold": threshold,
+        "val_operating_point": op_point,
         "val_metrics": val_metrics,
         "final_test_metrics": final_metrics,
         "fold_results": {str(k): v for k, v in all_fold_results.items()},
