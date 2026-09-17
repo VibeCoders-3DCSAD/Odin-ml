@@ -106,13 +106,21 @@ def _horizon_factor(horizon: str) -> float:
     return 1.0
 
 
-def _projection_weights(transactions: list[dict], horizon: str) -> np.ndarray:
+def _projection_weights(
+    transactions: list[dict], horizon: str, incomplete_month: str | None = None
+) -> np.ndarray:
     """Allocate a horizon total using the user's observed spending rhythm."""
     df = transactions_to_frame(transactions)
     expense = df[df["transaction_type"] == "expense"].copy()
     period_count = {"WEEKLY": 7, "SEMI_MONTHLY": 2, "MONTHLY": 4, "YEARLY": 12}[horizon]
     if expense.empty:
         return np.full(period_count, 1.0 / period_count)
+
+    if horizon == "YEARLY" and incomplete_month is not None:
+        incomplete_period = pd.Period(incomplete_month, freq="M")
+        is_incomplete_month = expense["date"].dt.to_period("M") == incomplete_period
+        if (~is_incomplete_month).any():
+            expense = expense.loc[~is_incomplete_month]
 
     if horizon == "WEEKLY":
         expense["period"] = expense["date"].dt.dayofweek
@@ -141,6 +149,14 @@ def _projection_dates(transactions: list[dict], horizon: str) -> list[str]:
     return [date.date().isoformat() for date in pd.date_range(first_next_month, periods=12, freq="MS")]
 
 
+def _align_projection_weights(weights: np.ndarray, dates: list[str], horizon: str) -> np.ndarray:
+    """Align calendar-month yearly weights with a forecast starting next month."""
+    if horizon != "YEARLY":
+        return weights
+    first_month = pd.Timestamp(dates[0]).month
+    return np.roll(weights, -(first_month - 1))
+
+
 def _category_proportions(transactions: list[dict]) -> dict[str, float]:
     df = transactions_to_frame(transactions)
     expense = df[df["transaction_type"] == "expense"]
@@ -167,8 +183,12 @@ def forecast(
         upper_95=round(scaled_ci["upper_95"], 2),
     )
     transactions = [t.model_dump() for t in request.historical_transactions]
-    weights = _projection_weights(transactions, request.forecast_horizon.value)
     dates = _projection_dates(transactions, request.forecast_horizon.value)
+    incomplete_month = max(transaction["date"] for transaction in transactions)[:7]
+    weights = _projection_weights(
+        transactions, request.forecast_horizon.value, incomplete_month
+    )
+    weights = _align_projection_weights(weights, dates, request.forecast_horizon.value)
 
     if request.forecast_level == ForecastLevel.TOTAL:
         points = [
@@ -186,13 +206,18 @@ def forecast(
             for group, share in sorted(proportions.items(), key=lambda item: item[1], reverse=True)
             for date, weight in zip(
                 dates,
-                _projection_weights(
-                    [
-                        transaction
-                        for transaction in transactions
-                        if transaction["transaction_type"] == "expense"
-                        and transaction["category"] == group
-                    ],
+                _align_projection_weights(
+                    _projection_weights(
+                        [
+                            transaction
+                            for transaction in transactions
+                            if transaction["transaction_type"] == "expense"
+                            and transaction["category"] == group
+                        ],
+                        request.forecast_horizon.value,
+                        incomplete_month,
+                    ),
+                    dates,
                     request.forecast_horizon.value,
                 ),
                 strict=True,
