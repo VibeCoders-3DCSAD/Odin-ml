@@ -1,0 +1,139 @@
+{
+  "source": "PSA Household Final Consumption Expenditure by Purpose, at Constant 2018 Prices",
+  "year": 2023,
+  "unit": "million PHP (constant 2018 prices)",
+  "notes": "Essentials = food, housing, health, transport, education. 'other' = non-essential residual = Total HFCE minus essentials (equals alcohol/tobacco + clothing + furnishings + communication + recreation + restaurants/hotels + miscellaneous).",
+  "essentials": [
+    "food",
+    "housing",
+    "health",
+    "transport",
+    "education"
+  ],
+  "other_construction": "total - sum(essentials)",
+  "psa_series": {
+    "food": {
+      "Q1": 1265574,
+      "Q2": 1362290,
+      "Q3": 1230791,
+      "Q4": 1626806
+    },
+    "alcohol_tobacco": {
+      "Q1": 50281,
+      "Q2": 44441,
+      "Q3": 44464,
+      "Q4": 69400
+    },
+    "clothing": {
+      "Q1": 53153,
+      "Q2": 41158,
+      "Q3": 59280,
+      "Q4": 78853
+    },
+    "housing": {
+      "Q1": 440944,
+      "Q2": 553704,
+      "Q3": 459676,
+      "Q4": 483347
+    },
+    "furnishings": {
+      "Q1": 93612,
+      "Q2": 89372,
+      "Q3": 107537,
+      "Q4": 117557
+    },
+    "health": {
+      "Q1": 163223,
+      "Q2": 138034,
+      "Q3": 202630,
+      "Q4": 182361
+    },
+    "transport": {
+      "Q1": 357466,
+      "Q2": 308874,
+      "Q3": 372911,
+      "Q4": 333613
+    },
+    "communication": {
+      "Q1": 120846,
+      "Q2": 129982,
+      "Q3": 100933,
+      "Q4": 136075
+    },
+    "recreation": {
+      "Q1": 69069,
+      "Q2": 48607,
+      "Q3": 59201,
+      "Q4": 84979
+    },
+    "education": {
+      "Q1": 209215,
+      "Q2": 186084,
+      "Q3": 213148,
+      "Q4": 230920
+    },
+    "restaurants_hotels": {
+      "Q1": 351703,
+      "Q2": 207143,
+      "Q3": 282209,
+      "Q4": 370170
+    },
+    "miscellaneous": {
+      "Q1": 517071,
+      "Q2": 472035,
+      "Q3": 551053,
+      "Q4": 705407
+    },
+    "total": {
+      "Q1": 3692158,
+      "Q2": 3581723,
+      "Q3": 3683833,
+      "Q4": 4419487
+    }
+  },
+  "categories": {
+    "food": {
+      "psa_label": "Food and non-alcoholic beverages",
+      "Q1": 1265574,
+      "Q2": 1362290,
+      "Q3": 1230791,
+      "Q4": 1626806
+    },
+    "housing": {
+      "psa_label": "Housing, water, electricity, gas and other fuels",
+      "Q1": 440944,
+      "Q2": 553704,
+      "Q3": 459676,
+      "Q4": 483347
+    },
+    "health": {
+      "psa_label": "Health",
+      "Q1": 163223,
+      "Q2": 138034,
+      "Q3": 202630,
+      "Q4": 182361
+    },
+    "transport": {
+      "psa_label": "Transport",
+      "Q1": 357466,
+      "Q2": 308874,
+      "Q3": 372911,
+      "Q4": 333613
+    },
+    "education": {
+      "psa_label": "Education",
+      "Q1": 209215,
+      "Q2": 186084,
+      "Q3": 213148,
+      "Q4": 230920
+    },
+    "other": {
+      "psa_label": "Non-essential residual (Total HFCE - essentials)",
+      "construction": "total - (food + housing + health + transport + education)",
+      "Q1": 1255736,
+      "Q2": 1032737,
+      "Q3": 1204677,
+      "Q4": 1562440
+    }
+  }
+}
