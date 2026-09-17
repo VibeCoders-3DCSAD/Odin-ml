@@ -56,9 +56,9 @@ app/ (FastAPI)  →  /pfp/profile, /forecast/expenses, /anomaly/detect, /budget/
 > - **Anomaly** flags weird transactions. The IQR method won; the ML alternative was not good enough.  
 > - **Budget** solves a linear program to divide money while respecting constraints. It always satisfies the rules in testing.
 
-> **Ground rule of this document:** every constant below that can be cross-checked has been cross-checked against `training/scripts/*.py` or the committed artifacts. Where the doc can only *describe* a computation (svm kernel over 2,161 support vectors), we say so and give the hand-executable Path A (rule-based) instead.
+> **Ground rule of this document:** every constant below that can be cross-checked has been cross-checked against `training/scripts/*.py` or the committed artifacts. Where a model is too large to run whole by hand (svm kernel over 2,161 support vectors), we simulate it from the model's own runnable pieces — the scaler, γ, support vectors, one-vs-one votes, and Platt sigmoid described in §5.1 — never a different rule-based stand-in.
 
-> **De-jargonized:** If a number can be verified, it was verified. If a model is too complex to do by hand, the document gives you a simpler rule-based fallback so you can still reproduce the result on paper.
+> **De-jargonized:** If a number can be verified, it was verified. If a model is too complex to do by hand, the document simulates that model using its own real constants, so you can still reproduce the result on paper.
 
 ---
 
@@ -328,16 +328,20 @@ CalibratedClassifierCV(estimator=svc, cv=3, ensemble=False)   # Platt sigmoid pe
 > 3. Calibrates the SVM’s raw scores into probabilities using a sigmoid.  
 > The “support vectors” are the training points that define the boundary. There are 2,161 of them, so doing this fully by hand is not practical.
 
-The two alternative paths to a label:
+Two label sources, and the hand-check always follows the SVM:
 
-- **Path A (hand-executable whenever an SVM kernel is impractical):** the Tier-1 rules (§5.4).
-- **Path B:** full RBF SVM decision  
-  `f(x) = w·K(x) + b`, `K(x,z) = exp(−γ·‖x−z‖²)`, with Platt sigmoid  
-  `p(y|f) = 1 / (1 + exp(A·f + B))`, then softmax over the 8 class votes. With 2,161 support vectors and 19 features this is **not** pen-and-paper; it is what `predict_proba` does.
+- **Tier-1 rules (§5.4):** the *deployed fallback* — the `decision_rule` above keeps it only for when the SVM artifact is missing or lost its win. It is a pipeline safety net, **not** the hand-check in this document.
+- **Path B — simulate the SVM (hand-executable).** This is the document's default PFP hand-check. It walks the real model, not a stand-in:
+  1. **Standardize** with the artifact's `StandardScaler`: `zᵢ = (xᵢ − meanᵢ) / scaleᵢ`.
+  2. **One-vs-one votes.** The RBF kernel is `K(z, sv) = exp(−γ·‖z − sv‖²)` with `γ = 0.0597362` (from the artifact). For each of the 28 class pairs `(i,j)` the SVM scores `fᵢⱼ(z) = bᵢⱼ + Σ_{sv∈pair} α·y·K(z, sv)`; the sign picks the pair winner, and the class with the most pair wins is the prediction. Tallying the 28 real scores in §7.2b reproduces the label on paper.
+  3. **Platt sigmoid** turns each class's raw score into a probability: `p_c = 1 / (1 + exp(A_c·f_c + B_c))`, normalized to sum to 1.
+  4. **Marginalize** the 8 class probabilities over the three axes (Stable/Variable, obligation type, tolerance) exactly as §6 does.
+- **Path C (computer work):** the exact production call is `predict_proba` over all 2,161 support vectors with the same math as Path B. Intermediate values the doc hands you (the 28 pair scores, the fold-averaged probabilities) are read from the artifact and cross-checked against `training/scripts/`.
 
 > **De-jargonized:**  
-> - **Path A** is the simple if-then rules. Use this for hand checks.  
-> - **Path B** is the real SVM math: compare the new person to every support vector, compute a similarity score, then turn that score into probabilities. With thousands of support vectors, this is computer work, not paper work.
+> - **Tier-1** is only a safety net if the SVM model is missing. It is not used for hand checks.  
+> - **Path B** is the real SVM, split into arithmetic you can do: scale the numbers, see which of the 28 class-vs-class fights the person wins, and turn the winner's score into a probability with a sigmoid.  
+> - **Path C** is the same math, but the computer sums all 2,161 support vectors for you. The only step we hand you finished values for is that big sum; everything around it is calculator work.
 
 ### 5.2 Forecaster — pooled ARIMA
 
@@ -528,6 +532,106 @@ so the *realized* Tier-1 profile is **Stable/Obligated/At-Risk** — the truthfu
 > **Honest quirk worth saying out loud:** the *generated* label is Stable/Obligated/Tolerant (it uses the drawn archetype runway ≈5.0), but the *realized* trajectory only funds ~1.44 months of expenses. The two are different by design: the label is a persona *design parameter*, the runway column is an *emergent statistic*. The served model is trained on the label — reviewers should note this gap, and it motivates the future "realized-runway label" improvement.
 
 > **De-jargonized:** The generator intended this person to have 5 months of runway, so it labeled them Tolerant. But after simulating actual income and spending, they only ended up with about 1.44 months of runway. So the training label says Tolerant, but the real behavior says At-Risk. This is a known mismatch, not a bug in the arithmetic. It suggests a future improvement: label people based on realized runway, not just the template.
+
+### 7.2b PFP SVM simulation (hand-executable Path B)
+
+The SVM's answer for persona A, reproduced from the artifact's own constants. Class short names below (§6's order): SFA/SFT/SOA/SOT = Stable with Flexible/Obligated and At-Risk/Tolerant; VFA/VFT/VOA/VOT = Variable equivalents.
+
+**Step 1 — standardize** with the artifact scaler (`zᵢ = (xᵢ − meanᵢ) / scaleᵢ`):
+
+| # | feature | x | mean_ | scale_ | z |
+|---|---|---|---|---|---|
+| 1 | income_stability_cv | 0.0576 | 0.4546 | 0.4547 | −0.8731 |
+| 2 | obligation_ratio | 0.7972 | 0.8220 | 0.0353 | −0.7039 |
+| 3 | savings_rate | 0.1123 | 0.2093 | 0.1611 | −0.6025 |
+| 4 | debt_to_income | 0.0893 | 0.1046 | 0.0382 | −0.3997 |
+| 5 | discretionary_ratio | 0.2028 | 0.2708 | 0.0347 | −1.9613 |
+| 6 | income_trend | −30.34 | 54.5407 | 3137.39 | −0.0271 |
+| 7 | expense_trend | 565.80 | −10.5133 | 771.51 | 0.7470 |
+| 8 | volatility_index | 3,187.32 | 3,412.62 | 2,644.31 | −0.0852 |
+| 9 | category_entropy | 2.585 | 2.5842 | 0.0041 | 0.1879 |
+| 10 | transaction_frequency | 9.00 | 9.8822 | 0.2262 | −3.9003 |
+| 11 | avg_transaction_size | 4,284.23 | 3,291.15 | 1,094.41 | 0.9074 |
+| 12 | income_regularity | 1.00 | 0.8822 | 0.2262 | 0.5207 |
+| 13 | expense_regularity | 1.00 | 1.0000 | 1.0000 | 0.0000 |
+| 14 | income_expense_gap | 55,676 | 12,310.08 | 60,528.81 | 0.7165 |
+| 15 | essential_income_ratio | 0.6223 | 0.7827 | 0.4717 | −0.3401 |
+| 16 | month_sin | 0.00 | ≈0.0 | 1.0000 | 0.0000 |
+| 17 | month_cos | 1.00 | ≈0.0 | 1.0000 | 1.0000 |
+| 18 | income_volatility_interaction | 29,858 | 90,341.26 | 97,333.08 | −0.6214 |
+| 19 | obligation_volatility_interaction | 0.0459 | 0.3737 | 0.3746 | −0.8753 |
+
+**Step 2 — kernel similarity with the nearest support vectors** (`K = exp(−γ·‖z − sv‖²)`, `γ = 0.0597362`). The 5 support vectors closest (in scaled space) to persona A are all SFA-class (the densest class, 473 SVs):
+
+| rank | sv # (in 2,161) | class | ‖z − sv‖² | K = exp(−γ·‖z − sv‖²) |
+|---|---|---|---|---|
+| 1 | 63 | SFA | 22.0510 | 0.267872 |
+| 2 | 413 | SFA | 22.6704 | 0.258143 |
+| 3 | 355 | SFA | 23.0955 | 0.251669 |
+| 4 | 455 | SFA | 23.4384 | 0.246567 |
+| 5 | 209 | SFA | 23.7308 | 0.242297 |
+
+Hand the top row: `exp(−0.0597362 × 22.0510) = exp(−1.3172) = 0.267872` ✓. Each one-vs-one pair score is the weighted sum of these similarities over that pair's support vectors, plus a bias, e.g. the decisive SOT-vs-VOT pair has `b = −0.323819`:
+
+```text
+f_SOTvsVOT(z) = b + Σ_{sv ∈ SOT,VOT} α·y·K(z, sv) = −0.323819 + (the pair's sum) = −0.1248
+```
+
+**Step 3 — the 28 one-vs-one votes** (real scores from the artifact; positive sign → left class wins):
+
+| pair | score | winner | | pair | score | winner |
+|---|---|---|---|---|---|---|
+| SFA vs SFT | +0.1340 | SFA | | SOT vs VFA | +0.7787 | SOT |
+| SFA vs SOA | +1.3914 | SFA | | SOT vs VFT | +0.0174 | SOT |
+| SFA vs SOT | −0.4373 | SOT | | SOT vs VOA | +0.7456 | SOT |
+| SFA vs VFA | +0.8866 | SFA | | **SOT vs VOT** | **−0.1248** | **VOT** |
+| SFA vs VFT | −0.0493 | VFT | | VFA vs VFT | −0.1387 | VFT |
+| SFA vs VOA | +0.6384 | SFA | | VFA vs VOA | −0.4851 | VOA |
+| SFA vs VOT | −0.1456 | VOT | | VFA vs VOT | −0.1530 | VOT |
+| SFT vs SOA | +0.4422 | SFT | | VFT vs VOA | −0.0666 | VOA |
+| SFT vs SOT | −0.3597 | SOT | | VFT vs VOT | −0.3796 | VOT |
+| SFT vs VFA | +0.2858 | SFT | | VOA vs VOT | −0.0040 | VOT |
+| SFT vs VFT | −0.0124 | VFT | | | | |
+| SFT vs VOA | +0.2722 | SFT | | | | |
+| SFT vs VOT | −0.1221 | VOT | | | | |
+| SOA vs SOT | −0.9534 | SOT | | | | |
+| SOA vs VFA | +0.5275 | SOA | | | | |
+| SOA vs VFT | −0.2237 | VFT | | | | |
+| SOA vs VOA | +0.0565 | SOA | | | | |
+| SOA vs VOT | −0.3082 | VOT | | | | |
+
+**Tallied votes:** SFA **4**, SFT 3, SOA 2, SOT **6**, VFA 0, VFT 4, VOA 2, VOT **7** → most wins = **Variable/Obligated/Tolerant** ✓ (matches `ccv.predict(z)`; the raw-vector serve path agrees on the same label). Note the margins: VOT beats SOT 7–6, and the closest pair fight (VOA vs VOT) was decided by just **−0.0040**.
+
+**Step 4 — calibrated probabilities** (Platt sigmoid per class, averaged over the 3 CalibratedClassifierCV folds — this is `predict_proba`):
+
+| class | p | class | p |
+|---|---|---|---|
+| Stable/Flexible/At-Risk | 0.014587 | Variable/Flexible/At-Risk | 0.000003 |
+| Stable/Flexible/Tolerant | 0.000418 | Variable/Flexible/Tolerant | 0.012010 |
+| Stable/Obligated/At-Risk | 0.000159 | Variable/Obligated/At-Risk | 0.000041 |
+| Stable/Obligated/Tolerant | 0.242235 | Variable/Obligated/Tolerant | 0.730547 |
+
+**Step 5 — marginalize over the three axes (§6):**
+
+```text
+stability  P(Stable…)   = 0.014587 + 0.000418 + 0.000159 + 0.242235 = 0.2574
+obligated  P(…Obligated) = 0.000159 + 0.242235 + 0.000041 + 0.730547 = 0.9730
+tolerance  P(…Tolerant)  = 0.000418 + 0.242235 + 0.012010 + 0.730547 = 0.9852
+```
+
+axis picks: **Variable** (1 − 0.2574 = 0.7426), **Obligated** (0.9730), **Tolerant** (0.9852) → served profile **Variable/Obligated/Tolerant**.
+
+**Who says what:**
+
+| source | label |
+|---|---|
+| generated persona label (§7.1) | Stable/Obligated/Tolerant |
+| Tier-1 rules on realized numbers (§7.2) | Stable/Obligated/At-Risk |
+| SVM (simulated above, = served model) | Variable/Obligated/Tolerant |
+
+> **Honest quirk worth saying out loud:** the SVM was trained to reproduce *generated* labels, so it agrees with the archetype on obligation (0.9730) and tolerance (0.9852) but not on stability: it bets Variable (P(Stable) = 0.2574) even though the realized CV is 0.0576 — far below Tier-1's 0.50 threshold. The SVM's stability boundary is a curve fitted on simulated 12-month features, not the single `cv < 0.50` rule, so the two can disagree; that is a property of the models, not a typo.
+
+> **De-jargonized:** This section re-runs the actual SVM for persona A by hand. First, convert the 19 raw numbers to standardized z-scores. Then, measure how similar the person is to a few support-vector "anchor points" — close ones score about 0.25 on a similarity scale. The SVM then runs 28 one-vs-one "fights"; the person wins 7 as Variable/Obligated/Tolerant and 6 as Stable/Obligated/Tolerant, so the model's raw verdict is Variable/Obligated/Tolerant. Finally, a sigmoid turns the raw verdicts into probabilities and we add them up per axis, giving the same served profile. The only part the computer pre-computed for us is the big weighted sum over all 2,161 support vectors; the scaling, the fight tally, and the probability addition are all done on paper above.
 
 ### 7.3 Forecaster hand-step (the pooled ARIMA)
 
