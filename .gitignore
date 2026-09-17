@@ -37,6 +37,11 @@ training/synth/
 training/models/
 training/figures/
 
+# Synthetic Generation v1 / v2 outputs written at the repo root (regenerate
+# with training/scripts/synthesizer.py or training/scripts/synthesizer_v2.py).
+synth/
+synth_v2/
+
 # Platform and editor noise
 .DS_Store
 Thumbs.db
