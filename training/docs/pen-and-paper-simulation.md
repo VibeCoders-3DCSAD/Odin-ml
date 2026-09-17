@@ -276,8 +276,9 @@ ARIMA_MIN_HISTORY = 6
 PRE_REGISTERED_MAPE_REDUCTION = 0.20   # winner rule
 ```
 
-Pooling: each user's 12 monthly expense totals are divided by their own **3-month trailing mean**;
-the resulting ~1.0-value series is what ARIMA is fit to. Serving rescales back (§6).
+Pooling: each user's 12 monthly expense totals are divided by their own **full-history mean**;
+the resulting ~1.0-value series is what ARIMA is fit to. Serving rescales back by the user's
+**3-month trailing mean** (§6).
 
 Metric formulas used to pick the winner (`compute_metrics` in `train_forecaster.py`):
 
@@ -422,7 +423,8 @@ the pipeline on the realized numbers.
 
 ### 7.3 Forecaster hand-step (the pooled ARIMA)
 
-Pooling step: every persona contributes `z_month = expense_month / trailing_3m_mean` rounded to 6dp,
+Pooling step: every persona contributes `z_month = expense_month / user_mean` (that user's
+**full-history mean**, not a trailing window) rounded to 6dp,
 which compresses the whole population onto a ~1.0 scale. The pooled series (computed from the 8,400
 train personas — reproduce it yourself in ~30 lines of numpy):
 
@@ -444,10 +446,10 @@ level (persona A) = trailing-3m mean = (40,140.96 + 43,901.42 + 38,990.96)/3 = 4
 → month-13 forecast **≈ ₱41,000** (a flat pooled path — the ±20%/±40% bands in service terms are
 `[32,806, 49,208]` (80%) and `[24,604, 57,410]` (95%)).
 
-> **Quirk:** `models/forecaster/tier3_sarima.joblib` is a statsmodels object; neither available venv
-> here can unpickle it (no `statsmodels`), so the doc presents the ARIMA(1,1,0) *equations* plus the
-> population-fit φ above rather than the artifact's own stored coefficient (which will differ by
-> ~0.1). Same model family, same decision rule, fully reproducible.
+> **Quirk:** `models/forecaster/tier3_sarima.joblib` is a statsmodels object. The doc presents the
+> ARIMA(1,1,0) *equations* plus the population-fit φ above so the arithmetic is fully reproducible
+> by hand, rather than the artifact's own stored coefficient (which will differ by ~0.1). Same model
+> family, same decision rule.
 
 ### 7.4 Anomaly worked example (the month-2 phone bill)
 
