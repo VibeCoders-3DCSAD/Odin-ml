@@ -102,9 +102,9 @@ Alongside the class, the API returns:
 
 | Class | Typical user |
 |---|---|
-| `Stable/Flexible/Tolerant` | Salaried professional with low debt, healthy savings, and room to invest. |
+| `Stable/Flexible/Tolerant` | Regular income with low debt, healthy savings, and room to invest. |
 | `Stable/Obligated/At-Risk` | Steady income but heavy loan payments — one emergency away from trouble. |
-| `Variable/Flexible/Tolerant` | Freelancer or gig worker with irregular income but few fixed commitments. |
+| `Variable/Flexible/Tolerant` | Variable income with few fixed commitments and a healthy financial buffer. |
 | `Variable/Obligated/At-Risk` | Irregular income, high debts, thin margin — the most vulnerable profile. |
 
 (And four more combinations fill the remaining rows of the 2×2×2 grid.)

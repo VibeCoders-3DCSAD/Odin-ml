@@ -14,7 +14,7 @@
 
 ## Evaluation protocol (fixed for all new-scope runs)
 
-1. **Split integrity:** 5-fold expanding window from `training/datasets/processed/temporal_folds.json`; embargo months excluded from training labels (forecaster).
+1. **Split integrity:** 5-fold expanding window from `training/datasets/processed/temporal_folds.json`, keyed by canonical ISO `year_month` (`YYYY-MM`); embargo periods excluded from training labels (forecaster).
 2. **No test leakage:** operating thresholds selected on the held-out val split only; test used exactly once at the end. For anomaly, the fold-selected candidate is additionally **validated on the held-out test split** before adoption — the served winner is whichever candidate passes the rule on unseen-user test evidence, and the fold-vs-test PR-AUC gap is recorded in `evaluation.json` (`test_validation`), not hidden.
 3. **Write `evaluation.json` + `evaluation_report.md`** next to the artifact in `models/<family>/`.
 4. **Record:** per-tier metrics, winner, winner reason (rule restated), feature columns, timestamp, training-data hash, git commit.
