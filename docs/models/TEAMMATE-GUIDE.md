@@ -88,11 +88,14 @@ If a parquet exists, **you do not normally need to rebuild data**; only rebuild 
 
 **Synthetic Generation v2 (optional, parallel):** a second, HFCE-calibrated synth
 pipeline is available at `training/scripts/synthesizer_v2.py` / `generate_transactions_v2.py`
-/ `temporal_disaggregation.py`. It is **parallel** to the pipeline above — `synthesizer.py`,
-`generate_personas.py`, `generate_transactions.py`, and `preprocessor.py` are unedited and
-remain the default. v2 writes to `synth_v2/` (never `training/synth/`) and replaces v1's flat
-Gaussian monthly expense noise with a PSA HFCE quarterly-weighted schedule. See
-`training/docs/data-collection/synthetic-generation-v2.md` for commands and validation.
+/ `temporal_disaggregation.py` / `preprocessor_v2.py`. It is **parallel** to the pipeline
+above — `synthesizer.py`, `generate_personas.py`, `generate_transactions.py`, and
+`preprocessor.py` are unedited and remain the default. v2 writes to `synth_v2/` (never
+`training/synth/`) and replaces v1's flat Gaussian monthly expense noise with a PSA HFCE
+quarterly-weighted schedule. `preprocessor_v2.py` splits v2 personas + builds temporal
+folds into `training/datasets/processed_v2/`, using v1's exact split/fold algorithm
+(imported, read-only). See `training/docs/data-collection/synthetic-generation-v2.md`
+for commands and validation.
 
 ---
 

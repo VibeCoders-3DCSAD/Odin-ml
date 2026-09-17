@@ -124,6 +124,16 @@ PYTHONPATH=training/scripts python training/scripts/synthesizer_v2.py \
   --output synth_v2/
 ```
 
+`preprocessor_v2.py` additionally splits personas and builds temporal folds — using
+v1's exact `split_personas`/`generate_temporal_folds` algorithm (imported, read-only) —
+so v2 data can be trained/evaluated the same way v1 data is:
+
+```bash
+python training/scripts/preprocessor_v2.py \
+  --input training/datasets/unprocessed/puf.parquet \
+  --output training/datasets/processed_v2/
+```
+
 See [`training/docs/data-collection/synthetic-generation-v2.md`](training/docs/data-collection/synthetic-generation-v2.md)
 for the full runbook and
 [`training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md`](training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md)
