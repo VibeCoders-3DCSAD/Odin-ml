@@ -1,0 +1,58 @@
+{
+  "model_id": "forecaster-tier3_sarima",
+  "family": "forecaster",
+  "created_at": "2026-09-17T10:55:41.752038Z",
+  "training_commit": "4042846",
+  "training_data_hash": "66f122457896ff11baf613d14b0f7087b87fc6817b4125323f8183dcced02724",
+  "framework": "statsmodels",
+  "framework_version": "0.15.0",
+  "python_version": "3.14.7",
+  "artifacts": [
+    "tier3_sarima.joblib"
+  ],
+  "feature_columns": [
+    "day_of_week_sin",
+    "day_of_week_cos",
+    "day_of_month",
+    "lag_1d",
+    "lag_7d",
+    "lag_14d",
+    "lag_15d",
+    "lag_30d",
+    "lag_60d",
+    "rolling_mean_7d",
+    "rolling_std_7d",
+    "rolling_mean_14d",
+    "rolling_std_14d",
+    "rolling_mean_30d",
+    "rolling_std_30d",
+    "is_payday",
+    "days_to_payday",
+    "recency",
+    "frequency_30d",
+    "monetary_30d"
+  ],
+  "metrics": {
+    "primary": {
+      "name": "mape",
+      "value": 6.1245,
+      "reduction_vs_naive_pct": 0.8321240711249016,
+      "folds": 29
+    },
+    "secondary": {
+      "mae_mean": 2194.5063,
+      "smape_mean": 6.2301,
+      "mda_mean": 0.3187,
+      "rmse_mean": 4638.3749,
+      "r2_mean": 0.8302
+    }
+  },
+  "decision_rule": "best learned model must cut MAPE by \u2265 20% vs naive baseline, else naive",
+  "winner": "tier3_sarima",
+  "winner_artifact": "tier3_sarima.joblib",
+  "winner_reason": "tier3_sarima reduces MAPE by 83.2% (>20% threshold)",
+  "winner_params": null,
+  "threshold": null,
+  "fitted": true,
+  "serving_note": "loaded by app/models/loader.py"
+}

@@ -2,7 +2,7 @@
 
 - **Project:** Development of BUDI: A Personalized Intelligent Finance Management Application for Filipinos Using Classification, Forecasting, Optimization, and Anomaly Detection Models for Improving Savings and Debt
 - **Institution:** University of Makati | Group 4, III-DCSAD
-- **Last indexed:** 2026-09-08
+- **Last indexed:** 2026-09-17
 
 ---
 
@@ -69,7 +69,8 @@ Canonical home for **new-scope** final model artifacts, each with `metadata.json
 | :--- | :--- |
 | `models/README.md` | Artifact layout + `metadata.json` schema. |
 | `models/pfp/` | PFP classifier final artifact + metadata. |
-| `models/forecaster/` | Spending forecaster final artifact + metadata. |
+| `models/forecaster/` | Spending forecaster v1 artifact + metadata (12-month Gaussian-noise corpus). |
+| `models/forecaster_v2/` | Spending forecaster v2 artifact + metadata (HFCE-calibrated 36-month corpus). |
 | `models/anomaly/` | Anomaly detector final artifact + metadata. |
 | `models/budget/` | Budget optimizer config + metadata. |
 
@@ -96,6 +97,8 @@ The model development pipeline. Large generated artifacts are gitignored; script
 | :--- | :--- |
 | `docs/README.md` | Clarifies the split between `docs/standards/`, `docs/models/`, and `training/docs/`. |
 | `docs/models/TEAMMATE-GUIDE.md` | Trusted path for human teammates and AI agents: scope, runbooks, verification. |
+| `docs/models/forecaster.md` | Plain-language serving explanation; v1 evaluation figures. |
+| `docs/models/forecaster-v2.md` | HFCE-calibrated v2 training note: empirical backing, SARIMA vs ARIMA, 2026-09-17 metrics. |
 | `docs/models/model-candidate-roster.md` | RRL-grounded candidate algorithms per model family. |
 | `docs/standards/REPOSITORY-STANDARDS.md` | Enforceable Python/ML engineering standards. |
 | `docs/standards/git-commit-standards.md` | Git commit message format and scopes. |

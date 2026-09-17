@@ -1,6 +1,8 @@
 # Spending Forecaster — Plain-Language Explanation
 
 > **What it does:** Predicts how much a user will spend in the future, broken down by category and spread across a time horizon they choose.
+>
+> **v1 evaluation.** The figures below (MAPE 9.40%, five folds, 12-month Gaussian-noise corpus) describe the original synthetic generator. The HFCE-calibrated v2 training run — including what is empirically backed, when SARIMA actually fits a seasonal term, and the 2026-09-17 metrics — is in [`forecaster-v2.md`](forecaster-v2.md).
 
 ---
 
@@ -64,7 +66,7 @@ A **decision rule** enforced at training time: the winning learned model must re
 2. Fit a **low-order ARIMA** model — specifically `ARIMA(1,1,0)` with a seasonal component `Seasonal Order (1,0,0,12)` (monthly seasonal pattern). If the pooled series spans fewer than 24 months, it degrades to a plain ARIMA without the seasonal component.
 3. The model learns aggregate spending dynamics (mean reversion, trend, seasonal effects) that are **shared across all users**, then gets personalized at inference time through rescaling.
 
-**Performance:** MAPE of **9.40%** — a **74.9% improvement over the naive baseline**. Also strong on secondary metrics: R² = 0.80, MDA (Mean Directional Accuracy) = 0.71 (it picks the right up/down direction 71% of the time).
+**Performance (v1 corpus):** MAPE of **9.40%** — a **74.9% improvement over the naive baseline**. Also strong on secondary metrics: R² = 0.80, MDA (Mean Directional Accuracy) = 0.71 (it picks the right up/down direction 71% of the time). That v1 series was only 12 months long, so the seasonal ARIMA gate never opened and the saved `tier3_sarima` fit was plain ARIMA. See [`forecaster-v2.md`](forecaster-v2.md) for the HFCE 36-month run.
 
 ### 3. Inference (live, per user)
 

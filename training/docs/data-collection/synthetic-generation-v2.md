@@ -3,7 +3,7 @@
 ```json
 {
   "document-type": "runbook",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "date": "2026.09.17",
   "authors": ["Group 4, III-DCSAD"]
 }
@@ -34,6 +34,11 @@ v2 only *imports* read-only helpers from these modules (e.g. `generate_all_perso
 expense-noise path (`rng.normal(1.0, 0.15)` bounded to `0.5×–2.0×`) is guarded by
 `tests/test_synth_v1_untouched.py` and remains in place for anyone who still wants the
 v1 (non-HFCE) generator.
+
+Personas are the v1 roster: 12 archetypes (A–L) with FIES NCR numerical baselines,
+BSP 2021 CFS behavioral patterns, and review by a general-finance subject-matter
+expert (Asst. Prof. Pamela A. Go, CBFS). v2 changes how those personas spend across
+the year, not who they are.
 
 If you want the original v1 behavior, keep using `synthesizer.py` / `preprocessor.py`
 exactly as before — nothing here changes their defaults or outputs.
@@ -88,6 +93,15 @@ python training/scripts/preprocessor_v2.py \
   --months 36 \
   --seed 42
 ```
+
+`--months 36` is the recommended **training** horizon because the spending
+forecaster's SARIMA seasonal period is `s=12`. A seasonal AR lag of 12 is
+unidentified below 24 monthly observations (`train_forecaster.py` then falls
+back to plain ARIMA). 36 months clears that gate and leaves held-out
+walk-forward folds in which the seasonal term is actually fit. Years after
+2023 still wrap the 2023 HFCE pattern because 2024 and 2025 FIES public-use
+files remain locked by the PSA. The synthesizer default remains 12 months
+when you are not training the seasonal forecaster.
 
 This writes `training/datasets/processed_v2/{train,val,test}.parquet`,
 `split_metadata.json` (stamped with `synth_version = "2.0.0"`),
@@ -171,6 +185,10 @@ python training/scripts/train_forecaster.py \
 (Check each script's `--help` output for its exact flags — this repo's isolation rule
 forbids changing their *defaults*, but every script accepts explicit paths.)
 
+The 2026-09-17 walk-forward run on this path is documented in
+[`docs/models/forecaster-v2.md`](../../../docs/models/forecaster-v2.md)
+(empirical backing, 24-month SARIMA gate, metrics, and non-claims versus v1).
+
 ---
 
 ## 6. Validation Commands
@@ -216,7 +234,8 @@ To avoid overstating what the synthetic data represents:
 - **Equal-thirds within a quarter is a modeling assumption**, not an observed
   household-level monthly pattern (methodology §7).
 - **Multi-year runs reuse the same 12-month HFCE pattern every year** (calendar month →
-  HFCE month index via `(month - 1) % 12`). This is a documented limitation, not a
-  claim of year-specific seasonality beyond 2023.
+  HFCE month index via `(month - 1) % 12`). The 2023 FIES public-use file is the latest
+  released by the PSA; 2024 and 2025 FIES microdata remain locked. The wrap is a
+  data-availability constraint, not a claim of year-specific seasonality beyond 2023.
 - **`Other` is a residual bucket** (Total HFCE − essentials), not the narrower PSA
   "Miscellaneous goods and services" series alone (methodology §10).

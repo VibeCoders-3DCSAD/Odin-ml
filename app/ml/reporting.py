@@ -121,6 +121,19 @@ def _winner_artifact_for(family: str, evaluation: dict) -> str:
     return ""
 
 
+def _fold_window_lines(fr: dict) -> list[str]:
+    """Train/test window lines. v2 uses YYYY-MM periods; v1 used integer months."""
+    if "train_periods" in fr or "test_periods" in fr:
+        return [
+            f"- Train periods: {fr.get('train_periods', [])}",
+            f"- Test periods: {fr.get('test_periods', [])}",
+        ]
+    return [
+        f"- Train months: {fr.get('train_months', [])}",
+        f"- Test months: {fr.get('test_months', [])}",
+    ]
+
+
 def _forecaster_sections(evaluation: dict) -> tuple[str, str, list[str], str]:
     header = (
         "| Tier | MAE (mean ± std) | SMAPE (mean ± std) | MDA (mean ± std) | "
@@ -148,8 +161,7 @@ def _forecaster_sections(evaluation: dict) -> tuple[str, str, list[str], str]:
             [
                 f"### Fold {fr['fold']}",
                 "",
-                f"- Train months: {fr['train_months']}",
-                f"- Test months: {fr['test_months']}",
+                *_fold_window_lines(fr),
                 f"- Train samples: {fr['n_train']}",
                 f"- Test samples: {fr['n_test']}",
                 "",
@@ -209,8 +221,7 @@ def _pfp_sections(evaluation: dict) -> tuple[str, str, list[str], str]:
             [
                 f"### Fold {fr['fold']}",
                 "",
-                f"- Train months: {fr['train_months']}",
-                f"- Test months: {fr['test_months']}",
+                *_fold_window_lines(fr),
                 f"- Train personas: {fr['n_train_personas']}",
                 f"- Test personas: {fr['n_test_personas']}",
                 "",

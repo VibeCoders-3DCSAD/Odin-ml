@@ -3,7 +3,7 @@
 ```json
 {
   "document-type": "methodology",
-  "version": "1.1.0",
+  "version": "1.1.3",
   "date": "2026.09.17",
   "authors": ["Group 4, III-DCSAD"]
 }
@@ -24,8 +24,13 @@ pipeline living alongside the original (v1) synthetic generator:
    household-category benchmark \(A_{h,c}\) used for disaggregation is
    \(A_{h,c} = \text{persona monthly category expense} \times 12\), where the persona's
    monthly category expense is itself derived from FIES-calibrated archetypes (via v1's
-   `generate_all_personas`). This is **not** a direct row-level replay of individual FIES
-   `SEQ_NO` household records — it is the FIES-calibrated annual anchor for that persona.
+   `generate_all_personas`). Those 12 archetypes (A–L) take numerical baselines from
+   2023 FIES NCR and behavioral patterns from the BSP 2021 Consumer Finance Survey;
+   the roster was reviewed by a general-finance subject-matter expert (Asst. Prof.
+   Pamela A. Go, CBFS) against the Odin-Paper SME draft
+   (`docs/ml/1_problem-statement/persona-validation-list-SME-draft.md`). This is
+   **not** a direct row-level replay of individual FIES `SEQ_NO` household records —
+   it is the FIES-calibrated, SME-reviewed annual anchor for that persona.
 3. **`Other` is the residual.** \(H_{\text{Other},q}\) = quarterly Total HFCE minus the
    five essential categories (Food, Housing, Health, Transport, Education), per §10 below.
 4. **Default output location.** v2 artifacts (personas, transactions, monthly summaries,
@@ -48,7 +53,7 @@ The methodology follows established temporal-disaggregation and benchmarking pri
 
 ## 1. Primary Household Source: 2023 FIES
 
-The **2023 Family Income and Expenditure Survey (FIES)** is used as the household-level source of annual expenditure.
+The **2023 Family Income and Expenditure Survey (FIES)** is used as the household-level source of annual expenditure. The 2023 round is the latest FIES public-use file released by the PSA at the time of this study; the 2024 and 2025 FIES microdata remain locked and are not available for public research use. Multi-year synthetic calendars therefore replay the 2023 within-year HFCE pattern rather than claiming unpublished FIES vintages. The 36-month horizon used for the v2 forecaster training corpus is a downstream modelling choice: Seasonal ARIMA with period `s=12` requires at least 24 monthly observations to identify the seasonal term. The extra year beyond that floor is calendar labels wrapping 2023 HFCE, not additional FIES vintages.
 
 For household \(h\) and expenditure category \(c\):
 
