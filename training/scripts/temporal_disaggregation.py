@@ -92,12 +92,12 @@ def load_hfce_levels(
     try:
         raw = path.read_text()
     except OSError as e:
-        raise HFCEConfigError(f"Failed to read HFCE config {path}: {e}")
+        raise HFCEConfigError(f"Failed to read HFCE config {path}: {e}") from e
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise HFCEConfigError(f"Invalid JSON in HFCE config {path}: {e}")
+        raise HFCEConfigError(f"Invalid JSON in HFCE config {path}: {e}") from e
 
     if not isinstance(data, dict) or "categories" not in data:
         raise HFCEConfigError(f"HFCE config {path} is missing the 'categories' key")
@@ -107,15 +107,11 @@ def load_hfce_levels(
     levels: dict[str, dict[str, float]] = {}
     for category in HFCE_CATEGORIES:
         if category not in categories:
-            raise HFCEConfigError(
-                f"HFCE config {path} is missing category '{category}'"
-            )
+            raise HFCEConfigError(f"HFCE config {path} is missing category '{category}'")
 
         entry = categories[category]
         if not isinstance(entry, dict):
-            raise HFCEConfigError(
-                f"HFCE config {path} category '{category}' is not an object"
-            )
+            raise HFCEConfigError(f"HFCE config {path} category '{category}' is not an object")
 
         quarters: dict[str, float] = {}
         for quarter in QUARTER_KEYS:
@@ -125,11 +121,11 @@ def load_hfce_levels(
                 )
             try:
                 quarters[quarter] = float(entry[quarter])
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as e:
                 raise HFCEConfigError(
                     f"HFCE config {path} category '{category}' has non-numeric "
                     f"{quarter}: {entry[quarter]!r}"
-                )
+                ) from e
 
         levels[category] = quarters
 
@@ -160,9 +156,7 @@ def quarter_weights(levels: dict[str, float]) -> dict[str, float]:
     return {q: levels[q] / total for q in QUARTER_KEYS}
 
 
-def disaggregate_annual(
-    annual_amount: float, weights: dict[str, float]
-) -> dict[str, float]:
+def disaggregate_annual(annual_amount: float, weights: dict[str, float]) -> dict[str, float]:
     """
     Split an annual amount into quarterly amounts using quarterly weights.
 
@@ -198,9 +192,9 @@ def reconcile_to_annual(
         # already correct. Otherwise, fall back to an equal split across all months
         # to avoid a division-by-zero crash while still summing to annual_amount.
         if annual_amount == 0:
-            return {m: 0.0 for m in provisional_monthly}
+            return dict.fromkeys(provisional_monthly, 0.0)
         n = len(provisional_monthly) or 1
-        return {m: annual_amount / n for m in provisional_monthly}
+        return dict.fromkeys(provisional_monthly, annual_amount / n)
 
     k = annual_amount / total
     return {m: v * k for m, v in provisional_monthly.items()}

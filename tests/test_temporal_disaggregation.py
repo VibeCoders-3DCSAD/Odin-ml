@@ -12,8 +12,8 @@ from temporal_disaggregation import (  # noqa: E402
     DEFAULT_HFCE_PATH,
     ESSENTIAL_CATEGORIES,
     HFCE_CATEGORIES,
-    HFCEConfigError,
     SYNTH_VERSION,
+    HFCEConfigError,
     build_year_schedule,
     disaggregate_annual,
     load_hfce_levels,
@@ -112,25 +112,25 @@ def test_disaggregate_annual_food_q4_example() -> None:
 
 
 def test_reconcile_to_annual_exact() -> None:
-    provisional = {m: 100.0 for m in range(1, 13)}  # provisional total = 1200
+    provisional = dict.fromkeys(range(1, 13), 100.0)  # provisional total = 1200
     reconciled = reconcile_to_annual(1000.0, provisional)
     assert sum(reconciled.values()) == pytest.approx(1000.0)
 
 
 def test_reconcile_to_annual_zero_annual_returns_zeros() -> None:
-    provisional = {m: 0.0 for m in range(1, 13)}
+    provisional = dict.fromkeys(range(1, 13), 0.0)
     reconciled = reconcile_to_annual(0.0, provisional)
     assert all(v == 0.0 for v in reconciled.values())
 
 
 def test_reconcile_to_annual_zero_provisional_nonzero_annual_no_crash() -> None:
-    provisional = {m: 0.0 for m in range(1, 13)}
+    provisional = dict.fromkeys(range(1, 13), 0.0)
     reconciled = reconcile_to_annual(1200.0, provisional)
     assert sum(reconciled.values()) == pytest.approx(1200.0)
 
 
 def test_build_year_schedule_annual_sum_matches_input() -> None:
-    annual_by_category = {c: 12000.0 for c in HFCE_CATEGORIES}
+    annual_by_category = dict.fromkeys(HFCE_CATEGORIES, 12000.0)
     schedule = build_year_schedule(annual_by_category)
 
     for category, annual_amount in annual_by_category.items():
@@ -139,7 +139,7 @@ def test_build_year_schedule_annual_sum_matches_input() -> None:
 
 
 def test_build_year_schedule_zero_annual() -> None:
-    annual_by_category = {c: 0.0 for c in HFCE_CATEGORIES}
+    annual_by_category = dict.fromkeys(HFCE_CATEGORIES, 0.0)
     schedule = build_year_schedule(annual_by_category)
     for category in HFCE_CATEGORIES:
         assert all(v == 0.0 for v in schedule[category].values())
@@ -154,23 +154,15 @@ def test_month_amount_matches_schedule() -> None:
     annual_by_category = {"food": 120000.0}
     schedule = build_year_schedule(annual_by_category)
     for month in range(1, 13):
-        assert month_amount(schedule, "food", month) == pytest.approx(
-            schedule["food"][month]
-        )
+        assert month_amount(schedule, "food", month) == pytest.approx(schedule["food"][month])
 
 
 def test_month_amount_wraps_month_13_equals_month_1() -> None:
     annual_by_category = {"food": 120000.0}
     schedule = build_year_schedule(annual_by_category)
-    assert month_amount(schedule, "food", 13) == pytest.approx(
-        month_amount(schedule, "food", 1)
-    )
-    assert month_amount(schedule, "food", 25) == pytest.approx(
-        month_amount(schedule, "food", 1)
-    )
-    assert month_amount(schedule, "food", 24) == pytest.approx(
-        month_amount(schedule, "food", 12)
-    )
+    assert month_amount(schedule, "food", 13) == pytest.approx(month_amount(schedule, "food", 1))
+    assert month_amount(schedule, "food", 25) == pytest.approx(month_amount(schedule, "food", 1))
+    assert month_amount(schedule, "food", 24) == pytest.approx(month_amount(schedule, "food", 12))
 
 
 def test_month_amount_unknown_category_raises() -> None:

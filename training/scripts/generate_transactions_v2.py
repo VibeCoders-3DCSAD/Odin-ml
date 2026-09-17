@@ -55,8 +55,7 @@ from temporal_disaggregation import (  # noqa: E402
 )
 
 METHODOLOGY = (
-    "FIES-anchored, HFCE-calibrated temporal disaggregation with proportional "
-    "benchmarking"
+    "FIES-anchored, HFCE-calibrated temporal disaggregation with proportional benchmarking"
 )
 
 
@@ -187,11 +186,10 @@ def generate_persona_transactions_v2(
         persona_id = persona["persona_id"]
         rng = np.random.default_rng(seed + hash(persona_id) % 10000)
     except (KeyError, TypeError) as e:
-        raise TransactionGenerationErrorV2(f"Invalid persona data: {e}")
+        raise TransactionGenerationErrorV2(f"Invalid persona data: {e}") from e
 
     annual_by_category = {
-        category: float(persona.get(f"{category}_expense", 0)) * 12
-        for category in HFCE_CATEGORIES
+        category: float(persona.get(f"{category}_expense", 0)) * 12 for category in HFCE_CATEGORIES
     }
     schedule = build_year_schedule(annual_by_category, hfce_path=hfce_path)
 
@@ -205,25 +203,21 @@ def generate_persona_transactions_v2(
 
         try:
             income_txns = generate_income_transactions(persona, month, year, rng)
-            expense_txns = generate_expense_transactions_v2(
-                persona, month, year, schedule, rng
-            )
+            expense_txns = generate_expense_transactions_v2(persona, month, year, schedule, rng)
 
             month_txns = income_txns + expense_txns
             if inject_anomalies_flag:
                 month_txns = inject_anomalies(month_txns, persona, rng)
 
-            summary = compute_monthly_summary(
-                persona, month_txns, month, year, previous_balance
-            )
+            summary = compute_monthly_summary(persona, month_txns, month, year, previous_balance)
             previous_balance = summary.balance
 
             all_transactions.extend(month_txns)
             all_summaries.append(summary)
         except Exception as e:
             warnings.warn(
-                f"Error generating v2 transactions for {persona_id} month "
-                f"{month}/{year}: {e}"
+                f"Error generating v2 transactions for {persona_id} month {month}/{year}: {e}",
+                stacklevel=2,
             )
             continue
 
@@ -261,9 +255,7 @@ def build_synth_v2_report(
     hfce_path: str | Path | None = None,
 ) -> dict:
     """Build the Synthetic Generation v2 synthesis report dict."""
-    resolved_hfce_path = (
-        str(hfce_path) if hfce_path is not None else str(DEFAULT_HFCE_PATH)
-    )
+    resolved_hfce_path = str(hfce_path) if hfce_path is not None else str(DEFAULT_HFCE_PATH)
 
     report: dict = {
         "synth_version": SYNTH_VERSION,
@@ -363,10 +355,10 @@ def main() -> None:
             all_transactions.extend(transactions)
             all_summaries.extend(summaries)
         except TransactionGenerationErrorV2 as e:
-            warnings.warn(f"Failed to generate v2 transactions for persona {i}: {e}")
+            warnings.warn(f"Failed to generate v2 transactions for persona {i}: {e}", stacklevel=2)
             failed_count += 1
         except Exception as e:
-            warnings.warn(f"Unexpected error for persona {i}: {e}")
+            warnings.warn(f"Unexpected error for persona {i}: {e}", stacklevel=2)
             failed_count += 1
 
     if failed_count > 0:

@@ -187,16 +187,10 @@ def test_weekly_category_split_sums_exactly() -> None:
 def test_v4_deterministic_given_same_seed() -> None:
     persona = _persona()
 
-    transactions_a, summaries_a = generate_persona_transactions_v2(
-        persona, num_months=12, seed=7
-    )
-    transactions_b, summaries_b = generate_persona_transactions_v2(
-        persona, num_months=12, seed=7
-    )
+    transactions_a, summaries_a = generate_persona_transactions_v2(persona, num_months=12, seed=7)
+    transactions_b, summaries_b = generate_persona_transactions_v2(persona, num_months=12, seed=7)
 
-    assert [t.transaction_id for t in transactions_a] == [
-        t.transaction_id for t in transactions_b
-    ]
+    assert [t.transaction_id for t in transactions_a] == [t.transaction_id for t in transactions_b]
     assert [t.amount for t in transactions_a] == [t.amount for t in transactions_b]
     assert [s.total_expenses for s in summaries_a] == [s.total_expenses for s in summaries_b]
 

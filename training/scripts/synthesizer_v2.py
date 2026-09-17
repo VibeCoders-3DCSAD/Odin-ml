@@ -200,10 +200,10 @@ def run_pipeline_v2(
                 json.dump(fies_stats, f, indent=2, cls=NumpyEncoder)
     except PersonaGenerationError as e:
         print(f"  ERROR: Persona generation failed: {e}")
-        raise PipelineErrorV2(f"Persona generation failed: {e}")
+        raise PipelineErrorV2(f"Persona generation failed: {e}") from e
     except Exception as e:
         print(f"  ERROR: Unexpected error generating personas: {e}")
-        raise PipelineErrorV2(f"Unexpected error generating personas: {e}")
+        raise PipelineErrorV2(f"Unexpected error generating personas: {e}") from e
 
     # Step 3: Generate v2 (HFCE-calibrated) transactions
     _print_step(3, total_steps, "Generating HFCE-calibrated transaction histories (v2)")
@@ -231,7 +231,7 @@ def run_pipeline_v2(
             all_transactions.extend(transactions)
             all_summaries.extend(summaries)
         except Exception as e:
-            warnings.warn(f"Failed v2 transaction generation for persona {i}: {e}")
+            warnings.warn(f"Failed v2 transaction generation for persona {i}: {e}", stacklevel=2)
             failed_personas += 1
 
     results["transaction_count"] = len(all_transactions)
@@ -342,9 +342,7 @@ Examples:
     parser.add_argument(
         "--strict", action="store_true", help="Strict mode: fail on missing critical columns"
     )
-    parser.add_argument(
-        "--no-anomalies", action="store_true", help="Disable anomaly injection"
-    )
+    parser.add_argument("--no-anomalies", action="store_true", help="Disable anomaly injection")
     parser.add_argument(
         "--limit", type=int, default=None, help="Limit total number of personas (for testing)"
     )
