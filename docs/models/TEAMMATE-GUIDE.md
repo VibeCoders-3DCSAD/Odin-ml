@@ -86,6 +86,14 @@ The three family datasets are:
 
 If a parquet exists, **you do not normally need to rebuild data**; only rebuild when you changed the generator.
 
+**Synthetic Generation v2 (optional, parallel):** a second, HFCE-calibrated synth
+pipeline is available at `training/scripts/synthesizer_v2.py` / `generate_transactions_v2.py`
+/ `temporal_disaggregation.py`. It is **parallel** to the pipeline above — `synthesizer.py`,
+`generate_personas.py`, `generate_transactions.py`, and `preprocessor.py` are unedited and
+remain the default. v2 writes to `synth_v2/` (never `training/synth/`) and replaces v1's flat
+Gaussian monthly expense noise with a PSA HFCE quarterly-weighted schedule. See
+`training/docs/data-collection/synthetic-generation-v2.md` for commands and validation.
+
 ---
 
 ## 5. Model lifecycle (new scope)
