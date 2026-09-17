@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 from app.schemas.forecast import ForecastHorizon, ForecastLevel, ForecastRequest
 from app.services import forecast_service
 
@@ -261,3 +262,155 @@ def test_category_group_forecast_returns_weekly_points_for_a_month(monkeypatch):
         ("Discretionary", 0.0),
         ("Discretionary", 0.0),
     ]
+
+
+def _pool_hist(users: dict, n_years: int = 1) -> pd.DataFrame:
+    """Synthetic monthly history with an absolute month index (1..12n)."""
+    rows = []
+    for uid, scale in users.items():
+        for y in range(n_years):
+            for m in range(1, 13):
+                rows.append({
+                    "user_id": uid,
+                    "target_expenses": scale * (1.0 + 0.05 * (m % 3)),
+                    "month_num": y * 12 + m,
+                    "month": m,
+                })
+    return pd.DataFrame(rows)
+
+
+def test_chronological_expense_level_keeps_years_distinct():
+    """A >12-month history must use its last three REAL months, not buckets 1..12."""
+    from app.services.forecast_service import _chronological_expense_level
+
+    txns = [
+        {"date": f"{y}-{m:02d}-10", "amount": 100.0, "category": "food",
+         "transaction_type": "expense"}
+        for y in (2023, 2024)
+        for m in range(1, 13)
+    ]
+    # Last three real months: 2024-10, 2024-11, 2024-12 -> 100.0 each.
+    assert _chronological_expense_level(txns) == 100.0
+
+    no_expenses = [
+        {"date": "2023-01-10", "amount": 500.0, "category": "salary",
+         "transaction_type": "income"}
+    ]
+    assert _chronological_expense_level(no_expenses) == 0.0
+    assert _chronological_expense_level([]) == 0.0
+
+
+def test_chronological_expense_level_crossing_year_boundary():
+    from app.services.forecast_service import _chronological_expense_level
+
+    amounts = {("2023", 11): 100.0, ("2024", 1): 200.0, ("2024", 2): 300.0, ("2024", 3): 400.0}
+    txns = [
+        {"date": f"{y}-{int(m):02d}-10", "amount": amt, "category": "food",
+         "transaction_type": "expense"}
+        for (y, m), amt in amounts.items()
+    ]
+    # tail(3) chronological = 200, 300, 400 -> 300 (Jan-2024 is NOT bucket 1 of Dec-2023).
+    assert _chronological_expense_level(txns) == 300.0
+
+
+def test_pooled_abs_span_counts_real_months_not_rows():
+    from training.scripts.train_forecaster import _pooled_abs_span
+
+    hist = _pool_hist({"u1": 1000.0}, n_years=2)
+    norm = hist["target_expenses"] / hist["target_expenses"].mean()
+    pooled = norm.groupby(hist["month_num"]).mean().sort_index()
+    assert _pooled_abs_span(pooled) == 24
+    assert len(pooled) == 24  # Jan-2024 (13) and Jan-2025 (1) stay separate rows.
+
+
+def test_forecast_sarima_pool_degrades_to_arima_on_single_year(monkeypatch):
+    import numpy as np
+    from training.scripts import train_forecaster as tf
+
+    if not tf.HAS_STATSMODELS:
+        import pytest
+
+        pytest.skip("statsmodels unavailable")
+
+    hist = _pool_hist({"u1": 1000.0, "u2": 400.0}, n_years=1)
+
+    import statsmodels.tsa.statespace.sarimax as _sarimax_mod
+
+    sarimax_calls = []
+    real_sarimax = _sarimax_mod.SARIMAX
+
+    def _wrapped_sarimax(*args, **kwargs):
+        sarimax_calls.append(args)
+        return real_sarimax(*args, **kwargs)
+
+    arima_calls = []
+    real_arima = tf.ARIMA
+
+    def _wrapped_arima(*args, **kwargs):
+        arima_calls.append(args)
+        return real_arima(*args, **kwargs)
+
+    monkeypatch.setattr(_sarimax_mod, "SARIMAX", _wrapped_sarimax)
+    monkeypatch.setattr(tf, "ARIMA", _wrapped_arima)
+
+    path, n_fits = tf.forecast_sarima_pool(hist, [13, 14])
+
+    assert n_fits == 1
+    assert not sarimax_calls, "a 12-month pool must NOT engage the seasonal branch"
+    assert arima_calls, "a 12-month pool must fall back to plain ARIMA"
+    assert np.isfinite(path[13]) and np.isfinite(path[14])
+
+
+def test_forecast_sarima_pool_engages_on_two_years(monkeypatch):
+    import numpy as np
+    from training.scripts import train_forecaster as tf
+
+    if not tf.HAS_STATSMODELS:
+        import pytest
+
+        pytest.skip("statsmodels unavailable")
+
+    hist = _pool_hist({"u1": 1000.0, "u2": 400.0}, n_years=2)
+
+    import statsmodels.tsa.statespace.sarimax as _sarimax_mod
+
+    sarimax_calls = []
+    real_sarimax = _sarimax_mod.SARIMAX
+
+    def _wrapped_sarimax(*args, **kwargs):
+        sarimax_calls.append(args)
+        return real_sarimax(*args, **kwargs)
+
+    monkeypatch.setattr(_sarimax_mod, "SARIMAX", _wrapped_sarimax)
+
+    path, n_fits = tf.forecast_sarima_pool(hist, [25])
+
+    assert n_fits == 1
+    assert sarimax_calls, "a >= 24-absolute-month pool must use the seasonal branch"
+    assert np.isfinite(path[25])
+
+
+def test_forecast_arima_pool_consistent_with_month_of_year_on_single_year(monkeypatch):
+    """Metamorphic regression: on 2023-only data, month_num pooling equals the
+    old month-of-year pooling exactly (both feed plain ARIMA)."""
+    import numpy as np
+    from training.scripts import train_forecaster as tf
+
+    if not tf.HAS_STATSMODELS:
+        import pytest
+
+        pytest.skip("statsmodels unavailable")
+
+    hist = _pool_hist({"u1": 1000.0, "u2": 400.0, "u3": 250.0}, n_years=1)
+
+    new_path, _ = tf.forecast_arima_pool(hist, [13, 14, 15])
+
+    # Old behavior: group by month-of-year (1..12) on the same rows.
+    h = hist[hist["target_expenses"] > 0].copy()
+    user_mean = h.groupby("user_id")["target_expenses"].transform("mean")
+    h["norm"] = h["target_expenses"] / user_mean
+    pooled = h.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+    model = tf.ARIMA(pooled, order=tf.ARIMA_ORDER).fit(method="burg")
+    old_forecast = np.asarray(model.forecast(3), dtype=float)
+
+    assert np.allclose(list(new_path.values()), old_forecast, atol=1e-6)

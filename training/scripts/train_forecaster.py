@@ -118,6 +118,7 @@ META_COLUMNS = [
     "year_month",
     "month",
     "year",
+    "month_num",
     "target_expenses",
     "has_transaction",
     "has_target",
@@ -197,6 +198,12 @@ def aggregate_to_monthly(df: pd.DataFrame, feature_cols: list) -> pd.DataFrame:
     agg_dict["has_transaction"] = "mean"
 
     monthly = df.groupby(["user_id", "year_month"]).agg(agg_dict).reset_index()
+    periods = pd.PeriodIndex(monthly["year_month"], freq="M")
+    monthly["month"] = periods.month
+    monthly["year"] = periods.year
+    # Absolute month index (2023-01 = 1). year_month already keeps two Januaries
+    # distinct; month_num is derived for the unseen-user harness and tests.
+    monthly["month_num"] = (monthly["year"] - 2023) * 12 + monthly["month"]
     return monthly
 
 
@@ -354,13 +361,40 @@ def train_rf(
     return model, y_pred
 
 
+def _pooled_norm_series(hist: pd.DataFrame) -> pd.Series:
+    """Mean user-normalized level per month, year-aware.
+
+    Prefer ISO ``year_month`` when present; otherwise ``month_num`` (absolute
+    index used by the unseen-user harness and unit tests).
+    """
+    if "year_month" in hist.columns:
+        return hist.groupby("year_month")["norm"].mean().sort_index()
+    return hist.groupby("month_num")["norm"].mean().sort_index()
+
+
+def _pooled_abs_span(pooled: pd.Series) -> int:
+    """Calendar span of a pooled series indexed by YYYY-MM or month_num.
+
+    Two Januaries from different years stay distinct. Numeric indexes use
+    max-min+1; ISO year_month indexes use pandas Period span.
+    """
+    if pooled.empty:
+        return 0
+    index = pooled.index
+    if pd.api.types.is_numeric_dtype(index):
+        return int(index.max() - index.min() + 1)
+    periods = pd.PeriodIndex(index.astype(str), freq="M")
+    return int(periods.max() - periods.min()) + 1
+
+
 def forecast_arima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[dict, int]:
     """Fit a pooled, user-normalized ARIMA and forecast the test window.
 
     Each user's monthly expense series is normalized by that user's own
     trailing mean (users sit on a common ~1.0 scale), then averaged across
-    users per month into one robust pooled series. A low-order ARIMA is fit on
-    that series and forecast forward over `target_row_periods` in sequence.
+    users per year_month into one robust pooled series. A low-order ARIMA is
+    fit on that series and forecast forward over `target_row_periods` in
+    sequence.
 
     Returns ({year_month: pooled_scalar}, n_fits). The returned map is the
     scale-normalized pooled forecast path; the caller rescales each user by
@@ -375,7 +409,7 @@ def forecast_arima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[d
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = _pooled_norm_series(hist).reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         model = ARIMA(pooled, order=ARIMA_ORDER).fit(method="burg")
         n_fits = 1
@@ -391,9 +425,9 @@ def forecast_sarima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[
     """SARIMA variant of the pooled user-normalized forecast.
 
     Same pool construction as :func:`forecast_arima_pool`. Uses a seasonal
-    component only when the pooled series spans >= 24 months (<= 12 rows is
-    typical for the current 12-month synthetic horizon, which degrades the
-    seasonal order back to plain ARIMA). Returns ({year_month: scalar}, n_fits).
+    component only when the pooled series spans >= 24 distinct months
+    (`s=12`; a single calendar year spans 12 and degrades to plain ARIMA).
+    Returns ({year_month: scalar}, n_fits).
     """
     n_fits = 0
     hist = hist[hist["target_expenses"].notna()].copy()
@@ -403,10 +437,12 @@ def forecast_sarima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = _pooled_norm_series(hist)
+    abs_span = _pooled_abs_span(pooled)
+    pooled = pooled.reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         try:
-            if len(pooled) >= 24:
+            if abs_span >= 24:
                 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
                 model = SARIMAX(pooled, order=ARIMA_ORDER, seasonal_order=(1, 0, 0, 12)).fit(
@@ -938,7 +974,7 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = _pooled_norm_series(hist).reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
@@ -959,17 +995,21 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
 
     elif winner == "tier3_sarima":
         # SARIMA variant: seasonal order only when the pooled series spans
-        # 24+ months; otherwise identical to the plain ARIMA artifact.
+        # 24+ distinct absolute months; otherwise identical to the plain ARIMA
+        # artifact. absolute-span pooling keeps two Januaries from different
+        # years as separate observations.
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = _pooled_norm_series(hist)
+        abs_span = _pooled_abs_span(pooled)
+        pooled = pooled.reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         model = None
         if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
             try:
-                if len(pooled) >= 24:
+                if abs_span >= 24:
                     from statsmodels.tsa.statespace.sarimax import SARIMAX
 
                     model = SARIMAX(pooled, order=ARIMA_ORDER, seasonal_order=(1, 0, 0, 12)).fit(

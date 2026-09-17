@@ -148,6 +148,9 @@ def build_daily_grid(persona_id: str, periods: pd.Series) -> pd.DataFrame:
         "year_month": dates.strftime("%Y-%m"),
         "month": dates.month,
         "year": dates.year,
+        # Absolute month index since the grid epoch (2023-01 = 1); keeps two
+        # Januaries from different years distinct in pooling/ordering.
+        "month_num": (dates.year - 2023) * 12 + dates.month,
         "day_of_week": dates.dayofweek,
         "day_of_month": dates.day,
     })
@@ -306,7 +309,8 @@ def process_persona(persona_id: str, persona_txns: pd.DataFrame,
         grid["frequency_30d"] = 0.0
         grid["monetary_30d"] = 0.0
 
-    # Target: next month total expenses (NaN when no next month exists)
+    # Target: next month total expenses (NaN when no next month exists).
+    # Keyed by ISO year_month so Jan-2024 and Jan-2025 stay separate.
     persona_summ = summaries.sort_values("year_month") if not summaries.empty else pd.DataFrame()
     target_map = {}
     if not persona_summ.empty:
