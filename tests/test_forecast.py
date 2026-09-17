@@ -184,6 +184,52 @@ def test_total_forecast_returns_twelve_monthly_points_for_a_year(monkeypatch):
     assert points[-1].date == "2027-09-01"
 
 
+def test_yearly_category_group_weights_align_with_forecast_months(monkeypatch):
+    monkeypatch.setattr(
+        forecast_service,
+        "_predict_monthly_total",
+        lambda _model, _transactions: (1_000.0, {"lower_80": 800.0, "upper_80": 1_200.0, "lower_95": 600.0, "upper_95": 1_400.0}),
+    )
+    request = ForecastRequest(
+        user_id="test-user-7",
+        historical_transactions=[
+            {"date": "2026-07-02", "amount": 100.0, "category": "Obligatory", "transaction_type": "expense"},
+            {"date": "2026-09-01", "amount": 1_000.0, "category": "income", "transaction_type": "income"},
+        ],
+        forecast_horizon=ForecastHorizon.YEARLY,
+        forecast_level=ForecastLevel.CATEGORY_GROUP,
+    )
+
+    points, _, _ = forecast_service.forecast(object(), request)
+
+    amounts_by_date = {point.date: point.amount for point in points}
+    assert amounts_by_date["2027-07-01"] == 12_000.0
+    assert amounts_by_date["2027-04-01"] == 0.0
+
+
+def test_yearly_forecast_excludes_the_in_progress_month_from_seasonal_weights(monkeypatch):
+    monkeypatch.setattr(
+        forecast_service,
+        "_predict_monthly_total",
+        lambda _model, _transactions: (1_000.0, {"lower_80": 800.0, "upper_80": 1_200.0, "lower_95": 600.0, "upper_95": 1_400.0}),
+    )
+    request = ForecastRequest(
+        user_id="test-user-8",
+        historical_transactions=[
+            {"date": "2025-09-02", "amount": 100.0, "category": "Essentials", "transaction_type": "expense"},
+            {"date": "2026-08-02", "amount": 100.0, "category": "Essentials", "transaction_type": "expense"},
+            {"date": "2026-09-15", "amount": 100.0, "category": "Essentials", "transaction_type": "expense"},
+        ],
+        forecast_horizon=ForecastHorizon.YEARLY,
+        forecast_level=ForecastLevel.CATEGORY_GROUP,
+    )
+
+    points, _, _ = forecast_service.forecast(object(), request)
+
+    amounts_by_date = {point.date: point.amount for point in points}
+    assert amounts_by_date["2027-09-01"] == 6_000.0
+
+
 def test_category_group_forecast_returns_weekly_points_for_a_month(monkeypatch):
     monkeypatch.setattr(
         forecast_service,
