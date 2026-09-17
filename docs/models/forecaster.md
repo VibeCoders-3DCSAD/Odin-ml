@@ -66,6 +66,19 @@ A **decision rule** enforced at training time: the winning learned model must re
 
 **Performance:** MAPE of **9.40%** — a **74.9% improvement over the naive baseline**. Also strong on secondary metrics: R² = 0.80, MDA (Mean Directional Accuracy) = 0.71 (it picks the right up/down direction 71% of the time).
 
+> **Current behavior callout (so nobody is surprised):**
+> - The model order is `(p, d, q) = (1, 1, 0)` (d = 1) with seasonal order
+>   `(P, D, Q, m) = (1, 0, 0, 12)` (D = 0, m = 12) — see `training/scripts/train_forecaster.py:129,411,938`.
+> - The seasonal (SARIMAX) branch only activates when the pooled series spans **≥ 24 distinct
+>   absolute months**. The current 12-month synthetic corpus (single year, 2023) therefore always
+>   fits a plain `ARIMA(1,1,0)` — SARIMA and ARIMA are, by construction, the same model on today's
+>   data (`models/forecaster/evaluation_report.md` shows identical metrics for both tiers).
+> - Pooling groups by an **absolute month index** (`(year−2023)·12 + month`), so two Januaries from
+>   different years never collapse into one row; the seasonal term becomes reachable once the data
+>   spans two years.
+> - At serving, the "level" multiplier is the user's mean of the **last 3 chronological**
+>   positive-expense months (not calendar months 10–12).
+
 ### 3. Inference (live, per user)
 
 When a forecast is requested:

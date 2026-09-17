@@ -142,6 +142,9 @@ def build_daily_grid(persona_id: str, year: int = 2023) -> pd.DataFrame:
         "date": dates,
         "month": dates.month,
         "year": dates.year,
+        # Absolute month index since the grid epoch (2023-01 = 1); keeps two
+        # Januaries from different years distinct in pooling/ordering.
+        "month_num": (year - 2023) * 12 + dates.month,
         "day_of_week": dates.dayofweek,
         "day_of_month": dates.day,
     })
@@ -299,15 +302,23 @@ def process_persona(persona_id: str, persona_txns: pd.DataFrame,
         grid["frequency_30d"] = 0.0
         grid["monetary_30d"] = 0.0
 
-    # Target: next month total expenses (NaN when no next month exists)
-    persona_summ = summaries.sort_values("month") if not summaries.empty else pd.DataFrame()
+    # Target: next month total expenses (NaN when no next month exists).
+    # Keyed by absolute month index (year-aware): Jan-2024 and Jan-2025 stay
+    # separate rows in pooling instead of collapsing into one "January".
+    persona_summ = summaries.sort_values(["year", "month"]) if not summaries.empty else pd.DataFrame()
     target_map = {}
     if not persona_summ.empty:
-        target_map = {m: total for m, total in zip(
-            persona_summ["month"].values, persona_summ["total_expenses"].values
-        )}
-    grid["target_expenses"] = grid["month"].map(
-        {m: target_map.get(m + 1, np.nan) for m in range(1, 13)}
+        target_map = {
+            (int(y) - 2023) * 12 + int(m): total
+            for y, m, total in zip(
+                persona_summ["year"].values,
+                persona_summ["month"].values,
+                persona_summ["total_expenses"].values,
+                strict=True,
+            )
+        }
+    grid["target_expenses"] = grid["month_num"].map(
+        lambda mn: target_map.get(int(mn) + 1, np.nan)
     )
 
     # Add metadata

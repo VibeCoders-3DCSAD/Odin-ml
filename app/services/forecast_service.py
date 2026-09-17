@@ -12,10 +12,29 @@ from app.schemas.forecast import (
     ForecastRequest,
 )
 from app.services.features import (
-    build_monthly_summaries,
     forecast_last_3_months,
     transactions_to_frame,
 )
+
+
+def _chronological_expense_level(transactions: list[dict]) -> float:
+    """Mean of the last 3 chronological months with positive expenses.
+
+    The fixed 1..12 bucket summaries (``build_monthly_summaries``) renumber
+    real dates onto the synthetic 2023 grid, so month 13 and month 1 would
+    collapse into a single row. Grouping by the actual (year, month) keeps
+    each real month distinct, so a >12-month history still uses its last
+    three real months for the user's expense level.
+    """
+    if not transactions:
+        return 0.0
+    df = transactions_to_frame(transactions)
+    expense = df[df["transaction_type"] == "expense"]
+    if expense.empty:
+        return 0.0
+    monthly = expense.groupby([expense["date"].dt.year, expense["date"].dt.month])["amount"].sum()
+    monthly = monthly[monthly > 0].sort_index()
+    return float(monthly.tail(3).mean()) if not monthly.empty else 0.0
 
 
 def _predict_monthly_total(model: ModuleModel, transactions: list[dict]) -> tuple[float, dict]:
@@ -29,9 +48,7 @@ def _predict_monthly_total(model: ModuleModel, transactions: list[dict]) -> tupl
         pool_level = float(artifact.get("pool_level", 1.0))
         profile_level = float(artifact.get("profile_level", pool_level))
         pool_pred = float(arima.forecast(1).iloc[0]) if arima is not None else pool_level
-        user_summaries = build_monthly_summaries(transactions)
-        expenses = user_summaries.loc[user_summaries["total_expenses"] > 0, "total_expenses"]
-        level = float(expenses.tail(3).mean()) if not expenses.empty else 0.0
+        level = _chronological_expense_level(transactions)
         if level <= 0:
             # Cold start (no positive-expense month): fall back to the pooled
             # profile prior so the forecast is never a literal zero.

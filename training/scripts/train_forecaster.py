@@ -117,6 +117,7 @@ META_COLUMNS = [
     "date",
     "month",
     "year",
+    "month_num",
     "target_expenses",
     "has_transaction",
     "has_target",
@@ -195,7 +196,17 @@ def aggregate_to_monthly(df: pd.DataFrame, feature_cols: list) -> pd.DataFrame:
     agg_dict["has_target"] = "first"
     agg_dict["has_transaction"] = "mean"
 
-    monthly = df.groupby(["user_id", "month"]).agg(agg_dict).reset_index()
+    # Legacy engineered datasets predate the `year` column; recover it from the
+    # daily `date` (or assume the single-year 2023 corpus).
+    if "year" not in df.columns:
+        df = df.assign(
+            year=df["date"].dt.year if "date" in df.columns else 2023
+        )
+
+    monthly = df.groupby(["user_id", "month", "year"]).agg(agg_dict).reset_index()
+    # Absolute month index (grid epoch 2023-01 = 1). Grouping by year keeps two
+    # Januaries from different years as separate rows.
+    monthly["month_num"] = (monthly["year"] - 2023) * 12 + monthly["month"]
     return monthly
 
 
@@ -215,10 +226,10 @@ def prepare_monthly_sequences(
     """
     X_seq, y_seq, meta, y_prev = [], [], [], []
     for uid in monthly_df["user_id"].unique():
-        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month")
+        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month_num")
         features = user_data[feature_cols].values
         targets = user_data["target_expenses"].values
-        months = user_data["month"].values
+        months = user_data["month_num"].values
 
         for i in range(lookback - 1, len(user_data)):
             if np.isnan(targets[i]):
@@ -253,10 +264,10 @@ def prepare_flat_features(
     lookback = 3
     X_flat, y_flat, meta, y_prev = [], [], [], []
     for uid in monthly_df["user_id"].unique():
-        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month")
+        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month_num")
         features = user_data[feature_cols].values
         targets = user_data["target_expenses"].values
-        months = user_data["month"].values
+        months = user_data["month_num"].values
 
         for i in range(lookback - 1, len(user_data)):
             if np.isnan(targets[i]):
@@ -353,13 +364,26 @@ def train_rf(
     return model, y_pred
 
 
+def _pooled_abs_span(pooled: pd.Series) -> int:
+    """Number of distinct absolute months spanned by a pooled series index.
+
+    Measured on the grouped index (absolute month numbers) before reset, so a
+    Jan-2024 and a Jan-2025 row remain separate and are NOT collapsed into a
+    single "January" observation.
+    """
+    if pooled.empty:
+        return 0
+    return int(pooled.index.max() - pooled.index.min() + 1)
+
+
 def forecast_arima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[dict, int]:
     """Fit a pooled, user-normalized ARIMA and forecast the test window.
 
     Each user's monthly expense series is normalized by that user's own
     trailing mean (users sit on a common ~1.0 scale), then averaged across
-    users per month into one robust pooled series. A low-order ARIMA is fit on
-    that series and forecast forward over `target_row_months` in sequence.
+    users per absolute month into one robust pooled series. A low-order ARIMA
+    is fit on that series and forecast forward over `target_row_months` in
+    sequence.
 
     Returns ({month: pooled_scalar}, n_fits). The returned map is the
     scale-normalized pooled forecast path; the caller rescales each user by
@@ -374,7 +398,7 @@ def forecast_arima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[di
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = hist.groupby("month_num")["norm"].mean().sort_index().reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         model = ARIMA(pooled, order=ARIMA_ORDER).fit(method="burg")
         n_fits = 1
@@ -389,10 +413,11 @@ def forecast_arima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[di
 def forecast_sarima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[dict, int]:
     """SARIMA variant of the pooled user-normalized forecast.
 
-    Same pool construction as :func:`forecast_arima_pool`. Uses a seasonal
-    component only when the pooled series spans >= 24 months (<= 12 rows is
-    typical for the current 12-month synthetic horizon, which degrades the
-    seasonal order back to plain ARIMA). Returns ({month: scalar}, n_fits).
+    Same pool construction as :func:`forecast_arima_pool` but on absolute
+    month indices. Uses a seasonal component only when the pooled series
+    spans >= 24 distinct absolute months (a single calendar year spans 12,
+    which degrades the seasonal order back to plain ARIMA). Returns
+    ({month: scalar}, n_fits).
     """
     n_fits = 0
     hist = hist[hist["target_expenses"].notna()].copy()
@@ -402,10 +427,12 @@ def forecast_sarima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[d
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = hist.groupby("month_num")["norm"].mean().sort_index()
+    abs_span = _pooled_abs_span(pooled)
+    pooled = pooled.reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         try:
-            if len(pooled) >= 24:
+            if abs_span >= 24:
                 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
                 model = SARIMAX(pooled, order=ARIMA_ORDER, seasonal_order=(1, 0, 0, 12)).fit(
@@ -582,13 +609,13 @@ def run_wfv(
         # But the lookback window can use any months <= max(train_months)
 
         # Training set: months in train_months, with lookback from earlier months
-        train_monthly = all_monthly[all_monthly["month"].isin(train_months)].copy()
+        train_monthly = all_monthly[all_monthly["month_num"].isin(train_months)].copy()
 
         # Test set: target months in test_months, with lookback from all prior
         # months including embargo months (features only, never training labels)
         embargo_months = fold_info.get("embargo_months", [])
         context_months = sorted(set(train_months + embargo_months + test_months))
-        test_context = all_monthly[all_monthly["month"].isin(context_months)].copy()
+        test_context = all_monthly[all_monthly["month_num"].isin(context_months)].copy()
 
         if train_monthly.empty:
             print(f"  WARNING: Empty train for fold {fold_num}, skipping")
@@ -617,11 +644,11 @@ def run_wfv(
         # mean of training targets. Prior actual for MDA = month T-2 expenses
         # (from test_context, not shift within test_actual which has 1 row/user).
         target_row_months = [m - 1 for m in test_months if m - 1 >= 1]
-        test_actual = test_context[test_context["month"].isin(target_row_months)].copy()
-        test_actual = test_actual.sort_values(["user_id", "month"])
+        test_actual = test_context[test_context["month_num"].isin(target_row_months)].copy()
+        test_actual = test_actual.sort_values(["user_id", "month_num"])
         naive_pred = np.full(len(test_actual), train_monthly["target_expenses"].mean())
         prior_months = [m - 2 for m in test_months if m - 2 >= 1]
-        prior_rows = test_context[test_context["month"].isin(prior_months)].set_index("user_id")[
+        prior_rows = test_context[test_context["month_num"].isin(prior_months)].set_index("user_id")[
             "target_expenses"
         ]
         naive_y_prev = test_actual["user_id"].map(prior_rows).values
@@ -639,7 +666,7 @@ def run_wfv(
         )
 
         # --- Tier 3a (variant): ARIMA (pooled user-normalized; one fit/fold) ---
-        arima_hist = all_monthly[all_monthly["month"] <= max(train_months)]
+        arima_hist = all_monthly[all_monthly["month_num"] <= max(train_months)]
         user_means = arima_hist.groupby("user_id")["target_expenses"].mean()
         global_mean = float(arima_hist["target_expenses"].mean())
 
@@ -647,7 +674,7 @@ def run_wfv(
             return np.array(
                 [
                     path_map.get(int(month), 1.0) * float(user_means.get(uid, global_mean))
-                    for uid, month in zip(test_actual["user_id"], test_actual["month"], strict=True)
+                    for uid, month in zip(test_actual["user_id"], test_actual["month_num"], strict=True)
                 ]
             )
 
@@ -901,7 +928,7 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = hist.groupby("month_num")["norm"].mean().sort_index().reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
@@ -922,17 +949,21 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
 
     elif winner == "tier3_sarima":
         # SARIMA variant: seasonal order only when the pooled series spans
-        # 24+ months; otherwise identical to the plain ARIMA artifact.
+        # 24+ distinct absolute months; otherwise identical to the plain ARIMA
+        # artifact. absolute-span pooling keeps two Januaries from different
+        # years as separate observations.
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = hist.groupby("month_num")["norm"].mean().sort_index()
+        abs_span = _pooled_abs_span(pooled)
+        pooled = pooled.reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         model = None
         if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
             try:
-                if len(pooled) >= 24:
+                if abs_span >= 24:
                     from statsmodels.tsa.statespace.sarimax import SARIMAX
 
                     model = SARIMAX(pooled, order=ARIMA_ORDER, seasonal_order=(1, 0, 0, 12)).fit(
