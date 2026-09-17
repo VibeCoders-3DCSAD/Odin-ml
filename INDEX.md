@@ -81,10 +81,14 @@ The model development pipeline. Large generated artifacts are gitignored; script
 | :--- | :--- |
 | `training/scripts/` | Collector, preprocessor, feature engineering, and training scripts. |
 | `training/docs/` | ML design documents (data collection, EDA, dimension discovery). |
+| `training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md` | FIES-anchored, HFCE-calibrated temporal disaggregation methodology. |
+| `training/docs/data-collection/synthetic-generation-v2.md` | Synthetic Generation v2 operator runbook (parallel pipeline; v1 untouched). |
+| `docs/superpowers/plans/2026-09-17-synthetic-generation-v2.md` | Implementation plan for Synthetic Generation v2. |
 | `training/docs/phases/` | Model development runbooks: Phase 7 evaluation, 8 selection/versioning, 9 deployment, 10 monitoring. |
 | `training/figures/` | EDA plots and `eda_report.md`. |
 | `training/datasets/` | Processed/engineered feature matrices (gitignored). |
 | `training/synth/` | Generated personas and transactions (gitignored). |
+| `synth_v2/` | Synthetic Generation v2 outputs — personas, transactions, `synthesis_report.json` (gitignored). |
 
 ## docs/
 

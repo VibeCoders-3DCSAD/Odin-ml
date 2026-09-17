@@ -16,6 +16,7 @@ Python microservice for machine learning APIs and inference, plus the complete m
 | `training/models/` | Intermediate model checkpoints (joblib, gitignored) |
 | `docs/models/` | RRL-grounded model candidate roster + model-lifecycle guidance |
 | `training/figures/` | EDA plots and analysis outputs (gitignored) |
+| `synth_v2/` | Optional Synthetic Generation v2 outputs (Parquet, gitignored) — parallel to `training/synth/`, see below |
 
 > **Model artifacts:** the top-level `models/` directory is the canonical home for **final**
 > model artifacts — every family is committed with `evaluation.json`,
@@ -56,6 +57,9 @@ python training/scripts/preprocessor.py \
 `preprocessor.py` also writes the synthetic personas, transactions, and monthly
 summaries used by the model-specific feature engineering steps:
 
+Monthly records use ISO `year_month` (`YYYY-MM`) as their canonical chronological
+key. Numeric `month` remains only as a calendar feature.
+
 ```text
 training/synth/{personas.json, personas.parquet, transactions.parquet, monthly_summaries.parquet}
 ```
@@ -67,16 +71,19 @@ python training/scripts/feature_engineering.py \
   --input training/datasets/processed/ \
   --output training/datasets/engineered/
 
-python training/scripts/feature_engineering_forecaster.py
+python training/scripts/feature_engineering_forecaster.py --workers 2
 python training/scripts/feature_engineering_anomaly.py
 python training/scripts/dimension_discovery.py
 ```
 
-Defaults: `feature_engineering_forecaster.py` reads `training/synth/` +
+Defaults: `feature_engineering_forecaster.py` reads `synth/` +
 `training/datasets/processed/split_metadata.json` → `training/datasets/forecaster/`;
-`feature_engineering_anomaly.py` reads `training/synth/transactions.parquet` +
-splits → `training/datasets/anomaly/`; `dimension_discovery.py` reads `training/synth/`
+`feature_engineering_anomaly.py` reads `synth/transactions.parquet` +
+splits → `training/datasets/anomaly/`; `dimension_discovery.py` reads `synth/`
 → `training/datasets/dimension-discovery/`.
+
+Use `--workers 2` for forecaster feature engineering on a machine with sufficient RAM;
+the default is one process.
 
 EDA (reads `training/datasets/processed/`, writes `training/figures/`):
 
@@ -101,6 +108,26 @@ Defaults: `train_pfp.py` reads `training/datasets/engineered/` → `models/pfp/`
 consume `training/datasets/processed/temporal_folds.json` for walk-forward validation.
 
 The Budget Optimizer is a constraint-optimization module (LP via `scipy.linprog`); see the Budget Optimizer MDD v1.0 in `../Odin-Paper/docs/ml/1_problem-statement/module-design-document.md`.
+
+## Synthetic Generation v2 (optional, parallel pipeline)
+
+**Synthetic Generation v2** is a FIES-anchored, HFCE-calibrated temporal disaggregation
+pipeline that runs **in parallel** to the pipeline above — it does not replace or edit
+`generate_personas.py`, `generate_transactions.py`, `synthesizer.py`, or
+`preprocessor.py`. v1 remains the default; v2 is opt-in for anyone who wants
+PSA-quarterly-calibrated monthly expense seasonality instead of v1's flat Gaussian
+monthly noise.
+
+```bash
+PYTHONPATH=training/scripts python training/scripts/synthesizer_v2.py \
+  --input training/datasets/unprocessed/puf.parquet \
+  --output synth_v2/
+```
+
+See [`training/docs/data-collection/synthetic-generation-v2.md`](training/docs/data-collection/synthetic-generation-v2.md)
+for the full runbook and
+[`training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md`](training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md)
+for the methodology.
 
 ## Tech Stack
 
