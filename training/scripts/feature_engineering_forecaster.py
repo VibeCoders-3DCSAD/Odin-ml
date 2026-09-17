@@ -27,15 +27,13 @@ Design principles:
 import argparse
 import json
 import time
-import warnings
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -72,6 +70,7 @@ FORECASTER_FEATURES = [
 META_COLUMNS = [
     "user_id",
     "date",
+    "year_month",
     "month",
     "year",
     "target_expenses",
@@ -95,6 +94,7 @@ class ForecasterEngineeringConfig:
     input_splits: str = "datasets/processed/split_metadata.json"
     output_dir: str = "datasets/forecaster/"
     seed: int = 42
+    workers: int = 1
 
 
 @dataclass
@@ -120,26 +120,32 @@ def load_splits(splits_path: str) -> dict:
 
 def load_transactions(transactions_path: str) -> pd.DataFrame:
     df = pd.read_parquet(transactions_path)
+    if "year_month" not in df.columns:
+        raise ValueError("transactions.parquet missing year_month")
     df["date"] = pd.to_datetime(df["date"])
     return df
 
 
 def load_summaries(summaries_path: str) -> pd.DataFrame:
-    return pd.read_parquet(summaries_path)
+    df = pd.read_parquet(summaries_path)
+    if "year_month" not in df.columns:
+        raise ValueError("monthly_summaries.parquet missing year_month")
+    return df
 
 
 # ---------------------------------------------------------------------------
 # Daily Grid Construction
 # ---------------------------------------------------------------------------
 
-def build_daily_grid(persona_id: str, year: int = 2023) -> pd.DataFrame:
-    """Create a full daily grid for one persona across all 12 months."""
-    start = pd.Timestamp(f"{year}-01-01")
-    end = pd.Timestamp(f"{year}-12-31")
+def build_daily_grid(persona_id: str, periods: pd.Series) -> pd.DataFrame:
+    """Create a daily grid spanning the persona's supplied monthly timeline."""
+    start = pd.Period(periods.min(), freq="M").start_time
+    end = pd.Period(periods.max(), freq="M").end_time.normalize()
     dates = pd.date_range(start, end, freq="D")
     grid = pd.DataFrame({
         "persona_id": persona_id,
         "date": dates,
+        "year_month": dates.strftime("%Y-%m"),
         "month": dates.month,
         "year": dates.year,
         "day_of_week": dates.dayofweek,
@@ -204,11 +210,10 @@ def compute_rolling_features(grid: pd.DataFrame) -> pd.DataFrame:
 def compute_calendar_features(grid: pd.DataFrame) -> pd.DataFrame:
     """Payday indicators and days-to-payday."""
     dom = grid["day_of_month"].values * 31.0  # un-normalize
-    month = grid["month"].values
     grid["is_payday"] = (((dom >= 15) & (dom <= 16)) | ((dom >= 29) & (dom <= 31))).astype(float)
 
     # Days to next payday (15th or last day of month)
-    days_in_month = np.where(np.isin(month, [4, 6, 9, 11]), 30, np.where(month == 2, 28, 31))
+    days_in_month = grid["date"].dt.days_in_month.values
     days_to_payday = np.where(dom <= 15, 15 - dom, np.maximum(0, days_in_month - dom))
     grid["days_to_payday"] = days_to_payday / 30.0  # normalize
     return grid
@@ -252,8 +257,8 @@ def compute_rfm_features(grid: pd.DataFrame, txn_dates: np.ndarray,
 def compute_monthly_target(summaries: pd.DataFrame, persona_id: str) -> pd.Series:
     """Get monthly total expenses as target variable."""
     mask = summaries["persona_id"] == persona_id
-    persona_summaries = summaries[mask].sort_values("month")
-    target = persona_summaries.set_index("month")["total_expenses"]
+    persona_summaries = summaries[mask].sort_values("year_month")
+    target = persona_summaries.set_index("year_month")["total_expenses"]
     return target
 
 
@@ -262,7 +267,7 @@ def compute_monthly_target(summaries: pd.DataFrame, persona_id: str) -> pd.Serie
 # ---------------------------------------------------------------------------
 
 def process_persona(persona_id: str, persona_txns: pd.DataFrame,
-                     summaries: pd.DataFrame, train_imputation: Optional[dict] = None,
+                      summaries: pd.DataFrame, train_imputation: dict | None = None,
                      is_train: bool = True) -> pd.DataFrame:
     """Process one persona: build daily grid, compute all features, return DataFrame."""
     # persona_txns is already filtered to this persona; skip if no expense data
@@ -270,7 +275,9 @@ def process_persona(persona_id: str, persona_txns: pd.DataFrame,
         return pd.DataFrame()
 
     # Build daily grid
-    grid = build_daily_grid(persona_id)
+    if summaries.empty:
+        return pd.DataFrame()
+    grid = build_daily_grid(persona_id, summaries["year_month"])
 
     # Aggregate daily expenses
     daily_exp = aggregate_daily_expenses(persona_txns, persona_id)
@@ -300,20 +307,72 @@ def process_persona(persona_id: str, persona_txns: pd.DataFrame,
         grid["monetary_30d"] = 0.0
 
     # Target: next month total expenses (NaN when no next month exists)
-    persona_summ = summaries.sort_values("month") if not summaries.empty else pd.DataFrame()
+    persona_summ = summaries.sort_values("year_month") if not summaries.empty else pd.DataFrame()
     target_map = {}
     if not persona_summ.empty:
-        target_map = {m: total for m, total in zip(
-            persona_summ["month"].values, persona_summ["total_expenses"].values
-        )}
-    grid["target_expenses"] = grid["month"].map(
-        {m: target_map.get(m + 1, np.nan) for m in range(1, 13)}
-    )
+        target_map = dict(zip(
+            persona_summ["year_month"].values, persona_summ["total_expenses"].values,
+            strict=True,
+        ))
+    next_period = (pd.PeriodIndex(grid["year_month"], freq="M") + 1).astype(str)
+    grid["target_expenses"] = next_period.map(target_map)
 
     # Add metadata
     grid["user_id"] = persona_id
 
     return grid
+
+
+def _process_persona_task(task: tuple[str, pd.DataFrame, pd.DataFrame]) -> pd.DataFrame:
+    """Run the per-persona pipeline in a process-pool worker."""
+    persona_id, persona_txns, persona_summaries = task
+    return process_persona(persona_id, persona_txns, persona_summaries)
+
+
+def process_personas(
+    persona_ids: list[str],
+    groups: dict,
+    summary_groups: dict,
+    workers: int,
+    split_name: str,
+    start_time: float,
+) -> list[pd.DataFrame]:
+    """Process a split serially or in order-preserving worker processes."""
+    empty_txn = pd.DataFrame()
+    empty_summaries = pd.DataFrame()
+
+    def tasks():
+        for persona_id in persona_ids:
+            yield (
+                persona_id,
+                groups.get(persona_id, empty_txn),
+                summary_groups.get(persona_id, empty_summaries),
+            )
+
+    if workers == 1:
+        results = map(_process_persona_task, tasks())
+    else:
+        executor = ProcessPoolExecutor(max_workers=workers)
+        results = executor.map(
+            _process_persona_task,
+            tasks(),
+            chunksize=25,
+            buffersize=workers * 2,
+        )
+
+    dataframes = []
+    try:
+        for index, dataframe in enumerate(results, start=1):
+            if index % 100 == 0 or index == 1:
+                elapsed = f" ({time.time() - start_time:.0f}s)" if split_name == "train" else ""
+                print(f"  {split_name.title()} persona {index}/{len(persona_ids)}{elapsed}")
+            if not dataframe.empty:
+                dataframes.append(dataframe)
+    finally:
+        if workers > 1:
+            executor.shutdown(wait=True, cancel_futures=True)
+
+    return dataframes
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +402,9 @@ def apply_imputation(df: pd.DataFrame, imputation: dict) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def run_pipeline(config: ForecasterEngineeringConfig) -> ForecasterEngineeringReport:
+    if config.workers < 1:
+        raise ValueError("workers must be at least 1")
+
     start_time = time.time()
     report = ForecasterEngineeringReport(timestamp=datetime.now().isoformat())
 
@@ -361,21 +423,17 @@ def run_pipeline(config: ForecasterEngineeringConfig) -> ForecasterEngineeringRe
     print(f"  Train: {len(train_ids)}, Val: {len(val_ids)}, Test: {len(test_ids)}")
 
     # Pre-partition transactions/summaries by persona once (avoids full-df scans per persona)
-    groups = {pid: g for pid, g in transactions.groupby("persona_id")}
-    summary_groups = {pid: g for pid, g in summaries.groupby("persona_id")}
-    empty_txn = pd.DataFrame(columns=transactions.columns)
-
+    groups = {}
+    for persona_id, group in transactions.groupby("persona_id"):
+        groups[persona_id] = group
+    summary_groups = {}
+    for persona_id, group in summaries.groupby("persona_id"):
+        summary_groups[persona_id] = group
     # Phase 1: Process train split, compute imputation, export, free memory
     print(f"\n[2a] Processing train split ({len(train_ids)} personas)...")
-    train_dfs = []
-    for i, pid in enumerate(train_ids):
-        if (i + 1) % 100 == 0 or i == 0:
-            print(f"  Train persona {i+1}/{len(train_ids)}: {pid} ({time.time()-start_time:.0f}s)")
-        persona_txns = groups.get(pid, empty_txn)
-        persona_summ = summary_groups.get(pid, pd.DataFrame())
-        df = process_persona(pid, persona_txns, persona_summ)
-        if not df.empty:
-            train_dfs.append(df)
+    train_dfs = process_personas(
+        train_ids, groups, summary_groups, config.workers, "train", start_time
+    )
 
     print("\n[2b] Computing imputation from train split...")
     train_imputation = compute_train_imputation(train_dfs)
@@ -412,15 +470,9 @@ def run_pipeline(config: ForecasterEngineeringConfig) -> ForecasterEngineeringRe
     # Phase 2-3: Process val and test splits one at a time
     for split_name, persona_ids in [("val", val_ids), ("test", test_ids)]:
         print(f"\n[3] Processing {split_name} split ({len(persona_ids)} personas)...")
-        dfs = []
-        for i, pid in enumerate(persona_ids):
-            if (i + 1) % 100 == 0 or i == 0:
-                print(f"  {split_name} persona {i+1}/{len(persona_ids)}: {pid}")
-            persona_txns = groups.get(pid, empty_txn)
-            persona_summ = summary_groups.get(pid, pd.DataFrame())
-            df = process_persona(pid, persona_txns, persona_summ)
-            if not df.empty:
-                dfs.append(df)
+        dfs = process_personas(
+            persona_ids, groups, summary_groups, config.workers, split_name, start_time
+        )
 
         if not dfs:
             print(f"  WARNING: No data for {split_name} split")
@@ -488,6 +540,8 @@ def parse_args():
     parser.add_argument("--output", default="datasets/forecaster/",
                         help="Output directory for forecaster features")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Persona feature-engineering processes (use 2 on memory-limited hosts)")
     return parser.parse_args()
 
 
@@ -499,5 +553,6 @@ if __name__ == "__main__":
         input_splits=args.splits,
         output_dir=args.output,
         seed=args.seed,
+        workers=args.workers,
     )
     run_pipeline(config)

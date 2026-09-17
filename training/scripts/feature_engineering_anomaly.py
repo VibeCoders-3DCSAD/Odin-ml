@@ -31,7 +31,7 @@ EXPENSE_CATS = ["food", "housing", "transport", "health", "education", "other"]
 ALL_CATS = EXPENSE_CATS + ["luxury", "gambling", "investment", "income"]
 
 META_COLUMNS = [
-    "user_id", "transaction_id", "month", "date", "category",
+    "user_id", "transaction_id", "year_month", "month", "date", "category",
     "amount", "transaction_type", "is_anomalous", "anomaly_type",
 ]
 
@@ -54,32 +54,32 @@ def build_category_history(txn):
         exp_group = group[expense_mask].sort_values("date")
         inc_group = group[income_mask].sort_values("date")
 
-        cat_monthly = exp_group.groupby(["month", "category"]).size().unstack(fill_value=0)
+        cat_monthly = exp_group.groupby(["year_month", "category"]).size().unstack(fill_value=0)
 
         cat_amounts = {}
         cat_months = {}
         for cat, cat_group in exp_group.groupby("category"):
             cat_amounts[cat] = cat_group["amount"].values
-            cat_months[cat] = cat_group["month"].values
+            cat_months[cat] = cat_group["year_month"].values
 
         # Income by month
-        inc_monthly = inc_group.groupby("month")["amount"].sum() if len(inc_group) > 0 else pd.Series(dtype=float)
+        inc_monthly = inc_group.groupby("year_month")["amount"].sum() if len(inc_group) > 0 else pd.Series(dtype=float)
         inc_amounts = inc_group["amount"].values if len(inc_group) > 0 else np.array([])
 
         # Transaction count by month
         all_exp = exp_group.copy()
-        txn_count_by_month = all_exp.groupby("month").size() if len(all_exp) > 0 else pd.Series(dtype=int)
+        txn_count_by_month = all_exp.groupby("year_month").size() if len(all_exp) > 0 else pd.Series(dtype=int)
 
         # Expense totals by month (for monthly-level deviation)
-        monthly_expense_totals = all_exp.groupby("month")["amount"].sum() if len(all_exp) > 0 else pd.Series(dtype=float)
+        monthly_expense_totals = all_exp.groupby("year_month")["amount"].sum() if len(all_exp) > 0 else pd.Series(dtype=float)
 
         history[pid] = {
-            "months": sorted(group["month"].unique()),
+            "months": sorted(group["year_month"].unique()),
             "cat_monthly_counts": cat_monthly,
             "cat_amounts": cat_amounts,
             "cat_months": cat_months,
             "all_amounts": exp_group["amount"].values,
-            "all_months": exp_group["month"].values,
+            "all_months": exp_group["year_month"].values,
             "all_dates": exp_group["date"].values,
             "inc_monthly": inc_monthly,
             "inc_amounts": inc_amounts,
@@ -95,13 +95,13 @@ def compute_features_for_persona(pid, txn_row, history, baseline_months=3):
         return {}
 
     h = history[pid]
-    current_month = int(txn_row["month"])
+    current_month = str(txn_row["year_month"])
     current_cat = txn_row["category"]
     current_amount = float(txn_row["amount"])
 
     # Baseline months
-    bl_start = max(1, current_month - baseline_months)
-    bl_months = [m for m in h["months"] if bl_start <= m < current_month]
+    current_index = h["months"].index(current_month)
+    bl_months = h["months"][max(0, current_index - baseline_months):current_index]
 
     if not bl_months:
         return _zero_features()
@@ -295,6 +295,7 @@ def main():
         row = {
             "user_id": pid,
             "transaction_id": txn_row["transaction_id"],
+            "year_month": str(txn_row["year_month"]),
             "month": int(txn_row["month"]),
             "date": txn_row["date"],
             "category": txn_row["category"],

@@ -166,11 +166,11 @@ def compute_overlay_features(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # Financial Trajectory: slope of the monthly savings gap per persona
-    if all(c in df.columns for c in ["persona_id", "month", "total_income", "total_expenses"]):
+    if all(c in df.columns for c in ["persona_id", "year_month", "total_income", "total_expenses"]):
         df["savings_gap"] = df["total_income"] - df["total_expenses"]
         slopes = {}
         for pid, g in df.groupby("persona_id"):
-            months = g["month"].values.astype(float)
+            months = pd.PeriodIndex(g["year_month"], freq="M").asi8.astype(float)
             gap = g["savings_gap"].values
             if len(months) >= 2 and np.std(months) > 0:
                 slopes[pid] = float(np.polyfit(months, gap, 1)[0])
@@ -310,7 +310,7 @@ def main():
         }
     out_path = Path(args.output)
     out_path.mkdir(parents=True, exist_ok=True)
-    synth_df[["persona_id", "month"] + overlay_cols].to_parquet(
+    synth_df[["persona_id", "year_month", "month"] + overlay_cols].to_parquet(
         out_path / "overlay_features.parquet", index=False
     )
     print(f"  Exported overlay features: {overlay_cols}")

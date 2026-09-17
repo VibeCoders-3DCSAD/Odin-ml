@@ -83,6 +83,7 @@ RAW_COLUMNS = [
 
 METADATA_COLUMNS = [
     "user_id",
+    "year_month",
     "month",
     "pfp_label",
     "runway_months",
@@ -222,7 +223,7 @@ def compute_derived_features(
     summaries: pd.DataFrame,
     anomaly_info: Optional[pd.DataFrame],
 ) -> list[dict]:
-    persona_summaries = summaries[summaries["persona_id"] == persona_id].sort_values("month").copy()
+    persona_summaries = summaries[summaries["persona_id"] == persona_id].sort_values("year_month").copy()
     if persona_summaries.empty:
         return []
 
@@ -230,7 +231,7 @@ def compute_derived_features(
     if anomaly_info is not None:
         mask = anomaly_info["persona_id"] == persona_id
         for _, row in anomaly_info[mask].iterrows():
-            persona_anomalies[row["month"]] = {
+            persona_anomalies[row["year_month"]] = {
                 "is_anomalous": bool(row["is_anomalous"]),
                 "anomaly_type": str(row.get("anomaly_type", "")),
             }
@@ -252,6 +253,7 @@ def compute_derived_features(
 
     for _, month_row in persona_summaries.iterrows():
         month = int(month_row["month"])
+        year_month = str(month_row["year_month"])
         income = float(month_row["total_income"])
         expense = float(month_row["total_expenses"])
         food = float(month_row.get("food_expense", 0))
@@ -333,10 +335,11 @@ def compute_derived_features(
         essential_income_ratio = _safe_div(essential, total_inc)
         savings_income_ratio = _safe_div(float(arr_savings.sum()), total_inc)
 
-        anomaly = persona_anomalies.get(month, {"is_anomalous": False, "anomaly_type": ""})
+        anomaly = persona_anomalies.get(year_month, {"is_anomalous": False, "anomaly_type": ""})
 
         row = {
             "user_id": persona_id,
+            "year_month": year_month,
             "month": month,
             "pfp_label": persona_row.get("pfp_label", ""),
             "is_anomalous": anomaly["is_anomalous"],
@@ -698,12 +701,14 @@ def load_monthly_summaries(input_dir: str) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"monthly_summaries.parquet not found at {path}")
     df = pd.read_parquet(path)
-    required = ["persona_id", "month", "year", "total_income", "total_expenses",
+    required = ["persona_id", "year_month", "month", "year", "total_income", "total_expenses",
                  "transaction_count", "income_stability_cv", "obligation_ratio",
                  "runway_months", "financial_tolerance", "pfp_label"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise FeatureEngineeringError(f"monthly_summaries.parquet missing columns: {missing}")
+    if not df["year_month"].astype(str).str.fullmatch(r"\d{4}-(0[1-9]|1[0-2])").all():
+        raise FeatureEngineeringError("monthly_summaries.parquet has invalid year_month values")
     return df
 
 
@@ -725,8 +730,8 @@ def load_anomaly_info(input_dir: str) -> Optional[pd.DataFrame]:
         return None
     try:
         df = pd.read_parquet(path)
-        df = df[["persona_id", "month", "is_anomalous", "anomaly_type"]]
-        agg = df.groupby(["persona_id", "month"]).agg(
+        df = df[["persona_id", "year_month", "is_anomalous", "anomaly_type"]]
+        agg = df.groupby(["persona_id", "year_month"]).agg(
             is_anomalous=("is_anomalous", "any"),
             anomaly_type=("anomaly_type", lambda x: next((v for v in x if pd.notna(v)), ""))
         ).reset_index()

@@ -116,6 +116,7 @@ LABEL_COL = "is_anomalous"
 META_COLS = [
     "user_id",
     "transaction_id",
+    "year_month",
     "month",
     "date",
     "category",
@@ -154,12 +155,12 @@ def load_folds(folds_path: str):
 
 
 def prepare_fold_data(train_df: pd.DataFrame, fold: dict):
-    """Split train_df into fold-train and fold-test based on months."""
-    train_months = set(fold["train_months"])
-    test_months = set(fold["test_months"])
+    """Split train_df into fold-train and fold-test based on chronological periods."""
+    train_periods = set(fold["train_periods"])
+    test_periods = set(fold["test_periods"])
 
-    fold_train = train_df[train_df["month"].isin(train_months)]
-    fold_test = train_df[train_df["month"].isin(test_months)]
+    fold_train = train_df[train_df["year_month"].isin(train_periods)]
+    fold_test = train_df[train_df["year_month"].isin(test_periods)]
 
     return fold_train, fold_test
 
@@ -556,8 +557,8 @@ def main():
     for fold_info in folds:
         fold_num = fold_info["fold"]
         print(
-            f"\n  Fold {fold_num}: train months {fold_info['train_months']}, "
-            f"test months {fold_info['test_months']}"
+            f"\n  Fold {fold_num}: train periods {fold_info['train_periods']}, "
+            f"test periods {fold_info['test_periods']}"
         )
 
         fold_train, fold_test = prepare_fold_data(train_df, fold_info)

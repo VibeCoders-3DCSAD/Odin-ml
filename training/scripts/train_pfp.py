@@ -150,8 +150,8 @@ RAW_COLUMNS = [
 @dataclass
 class FoldResult:
     fold: int
-    train_months: list[int]
-    test_months: list[int]
+    train_periods: list[str]
+    test_periods: list[str]
     n_train_personas: int
     n_test_personas: int
     tier_results: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -241,10 +241,10 @@ def aggregate_to_personas(
 
 
 def aggregate_to_personas_month_filter(
-    df: pd.DataFrame, feature_cols: list[str], months: list[int]
+    df: pd.DataFrame, feature_cols: list[str], periods: list[str]
 ) -> tuple[pd.DataFrame, dict[str, str]]:
-    """Aggregate monthly rows to one row per persona, filtered to specific months."""
-    filtered = df[df["month"].isin(months)]
+    """Aggregate monthly rows to one row per persona, filtered to chronological periods."""
+    filtered = df[df["year_month"].isin(periods)]
     if len(filtered) == 0:
         return pd.DataFrame(), {}
     return aggregate_to_personas(filtered, feature_cols)
@@ -553,18 +553,18 @@ def run_training(
 
     for fold_info in folds:
         fold_num = fold_info["fold"]
-        train_months = fold_info["train_months"]
-        test_months = fold_info["test_months"]
+        train_periods = fold_info["train_periods"]
+        test_periods = fold_info["test_periods"]
 
-        print(f"\n  Fold {fold_num}: Train months {train_months}, Test months {test_months}")
+        print(f"\n  Fold {fold_num}: Train periods {train_periods}, Test periods {test_periods}")
 
-        # Aggregate train personas using train_months only (feature computation window)
+        # Aggregate train personas using train_periods only (feature computation window)
         fold_train_personas, _ = aggregate_to_personas_month_filter(
-            train_data, feature_cols, train_months
+            train_data, feature_cols, train_periods
         )
-        # Aggregate val personas using test_months (held-out personas, different time window)
+        # Aggregate val personas using test_periods (held-out personas, different time window)
         fold_val_personas, _ = aggregate_to_personas_month_filter(
-            val_data, feature_cols, test_months
+            val_data, feature_cols, test_periods
         )
 
         if len(fold_train_personas) == 0 or len(fold_val_personas) == 0:
@@ -574,13 +574,13 @@ def run_training(
         X_ft, y_ft, _ = prepare_feature_matrix(fold_train_personas, feature_cols)
         X_fv, y_fv, _ = prepare_feature_matrix(fold_val_personas, feature_cols)
 
-        print(f"    Train: {len(fold_train_personas)} personas (months {train_months})")
-        print(f"    Val:   {len(fold_val_personas)} personas (months {test_months})")
+        print(f"    Train: {len(fold_train_personas)} personas (periods {train_periods})")
+        print(f"    Val:   {len(fold_val_personas)} personas (periods {test_periods})")
 
         fold_result = FoldResult(
             fold=fold_num,
-            train_months=train_months,
-            test_months=test_months,
+            train_periods=train_periods,
+            test_periods=test_periods,
             n_train_personas=len(fold_train_personas),
             n_test_personas=len(fold_val_personas),
         )
@@ -788,8 +788,8 @@ def run_training(
         "fold_details": [
             {
                 "fold": fr.fold,
-                "train_months": fr.train_months,
-                "test_months": fr.test_months,
+                "train_periods": fr.train_periods,
+                "test_periods": fr.test_periods,
                 "n_train_personas": fr.n_train_personas,
                 "n_test_personas": fr.n_test_personas,
                 "tier_results": {

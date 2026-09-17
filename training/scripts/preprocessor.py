@@ -80,6 +80,7 @@ RAW_COLUMNS = [
 
 METADATA_COLUMNS = [
     "user_id",
+    "year_month",
     "month",
     "pfp_label",
     "runway_months",
@@ -94,12 +95,14 @@ def load_monthly_summaries(input_dir: str) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"monthly_summaries.parquet not found at {path}")
     df = pd.read_parquet(path)
-    required = ["persona_id", "month", "year", "total_income", "total_expenses",
+    required = ["persona_id", "year_month", "month", "year", "total_income", "total_expenses",
                  "transaction_count", "income_stability_cv", "obligation_ratio",
                  "runway_months", "financial_tolerance", "pfp_label"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise DataValidationError(f"monthly_summaries.parquet missing columns: {missing}")
+    if not df["year_month"].astype(str).str.fullmatch(r"\d{4}-(0[1-9]|1[0-2])").all():
+        raise DataValidationError("monthly_summaries.parquet has invalid year_month values")
     return df
 
 
@@ -121,8 +124,8 @@ def load_anomaly_info(input_dir: str) -> Optional[pd.DataFrame]:
         return None
     try:
         df = pd.read_parquet(path)
-        df = df[["persona_id", "month", "is_anomalous", "anomaly_type"]]
-        agg = df.groupby(["persona_id", "month"]).agg(
+        df = df[["persona_id", "year_month", "is_anomalous", "anomaly_type"]]
+        agg = df.groupby(["persona_id", "year_month"]).agg(
             is_anomalous=("is_anomalous", "any"),
             anomaly_type=("anomaly_type", lambda x: next((v for v in x if pd.notna(v)), ""))
         ).reset_index()
@@ -133,7 +136,7 @@ def load_anomaly_info(input_dir: str) -> Optional[pd.DataFrame]:
 
 def validate_data(summaries: pd.DataFrame, personas: pd.DataFrame) -> dict:
     n_personas = summaries["persona_id"].nunique()
-    n_months = summaries["month"].nunique()
+    n_months = summaries["year_month"].nunique()
     total_rows = len(summaries)
 
     report = {
@@ -150,7 +153,7 @@ def validate_data(summaries: pd.DataFrame, personas: pd.DataFrame) -> dict:
     if zero_income > 0:
         report["warnings"].append(f"{zero_income} rows have zero income")
 
-    persona_month_counts = summaries.groupby("persona_id")["month"].count()
+    persona_month_counts = summaries.groupby("persona_id")["year_month"].count()
     incomplete = (persona_month_counts < 6).sum()
     if incomplete > 0:
         report["warnings"].append(f"{incomplete} personas have fewer than 6 months of data")
@@ -209,7 +212,7 @@ def _safe_div(a: float, b: float, default: float = 0.0) -> float:
 
 
 def generate_temporal_folds(
-    n_months: int,
+    periods: list[str],
     min_train_months: int = 6,
     embargo_months: int = 1,
     test_horizon_months: int = 1,
@@ -220,18 +223,18 @@ def generate_temporal_folds(
     if strategy == "expanding":
         fold_num = 0
         train_end = min_train_months
-        while train_end + embargo_months + test_horizon_months <= n_months:
+        while train_end + embargo_months + test_horizon_months <= len(periods):
             fold_num += 1
             emb_start = train_end + 1
             emb_end = train_end + embargo_months
             test_start = emb_end + 1
-            test_end = min(test_start + test_horizon_months - 1, n_months)
+            test_end = min(test_start + test_horizon_months - 1, len(periods))
 
             folds.append({
                 "fold": fold_num,
-                "train_months": list(range(1, train_end + 1)),
-                "embargo_months": list(range(emb_start, emb_end + 1)) if embargo_months > 0 else [],
-                "test_months": list(range(test_start, test_end + 1)),
+                "train_periods": periods[:train_end],
+                "embargo_periods": periods[emb_start - 1:emb_end] if embargo_months > 0 else [],
+                "test_periods": periods[test_start - 1:test_end],
             })
             train_end += 1
 
@@ -239,18 +242,18 @@ def generate_temporal_folds(
         fold_num = 0
         train_start = 1
         train_end = min_train_months
-        while train_end + embargo_months + test_horizon_months <= n_months:
+        while train_end + embargo_months + test_horizon_months <= len(periods):
             fold_num += 1
             emb_start = train_end + 1
             emb_end = train_end + embargo_months
             test_start = emb_end + 1
-            test_end = min(test_start + test_horizon_months - 1, n_months)
+            test_end = min(test_start + test_horizon_months - 1, len(periods))
 
             folds.append({
                 "fold": fold_num,
-                "train_months": list(range(train_start, train_end + 1)),
-                "embargo_months": list(range(emb_start, emb_end + 1)) if embargo_months > 0 else [],
-                "test_months": list(range(test_start, test_end + 1)),
+                "train_periods": periods[train_start - 1:train_end],
+                "embargo_periods": periods[emb_start - 1:emb_end] if embargo_months > 0 else [],
+                "test_periods": periods[test_start - 1:test_end],
             })
             train_start += 1
             train_end += 1
@@ -468,7 +471,7 @@ def run_preprocessing(
             drop_cols = [c for c in ["is_anomalous", "anomaly_type"] if c in split_df.columns]
             split_df = split_df.drop(columns=drop_cols)
             split_df = split_df.merge(
-                anomaly_renamed, on=["user_id", "month"], how="left")
+                anomaly_renamed, on=["user_id", "year_month"], how="left")
             split_df["is_anomalous"] = split_df["is_anomalous"].fillna(False).astype(bool)
             split_df["anomaly_type"] = split_df["anomaly_type"].fillna("")
 
@@ -477,12 +480,12 @@ def run_preprocessing(
         split_dfs[split_name] = split_df[meta_cols + raw_cols].copy()
         print(f"    -> {len(split_dfs[split_name]):,} rows")
 
-    n_months = summaries["month"].nunique()
+    periods = sorted(summaries["year_month"].unique())
     test_horizon_months = max(1, test_horizon_days // 30)
 
     print("\n[6/8] Generating temporal folds...")
     temporal_folds = generate_temporal_folds(
-        n_months=n_months,
+        periods=periods,
         min_train_months=min_train_months,
         embargo_months=embargo_months,
         test_horizon_months=test_horizon_months,
@@ -490,8 +493,8 @@ def run_preprocessing(
     )
     print(f"  Generated {len(temporal_folds)} temporal folds ({wfv_strategy})")
     for fold in temporal_folds:
-        print(f"    Fold {fold['fold']}: Train {fold['train_months']}, "
-              f"Embargo {fold['embargo_months']}, Test {fold['test_months']}")
+        print(f"    Fold {fold['fold']}: Train {fold['train_periods']}, "
+              f"Embargo {fold['embargo_periods']}, Test {fold['test_periods']}")
 
     print("\n[7/8] Exporting preprocessed raw data...")
     split_metadata = {

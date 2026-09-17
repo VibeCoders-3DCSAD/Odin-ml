@@ -115,6 +115,7 @@ FORECASTER_FEATURES = [
 META_COLUMNS = [
     "user_id",
     "date",
+    "year_month",
     "month",
     "year",
     "target_expenses",
@@ -133,8 +134,8 @@ ARIMA_MIN_HISTORY = 6  # months required from a user before ARIMA applies
 @dataclass
 class FoldResult:
     fold: int
-    train_months: list
-    test_months: list
+    train_periods: list
+    test_periods: list
     n_train_samples: int
     n_test_samples: int
     tier_results: dict = field(default_factory=dict)
@@ -195,7 +196,7 @@ def aggregate_to_monthly(df: pd.DataFrame, feature_cols: list) -> pd.DataFrame:
     agg_dict["has_target"] = "first"
     agg_dict["has_transaction"] = "mean"
 
-    monthly = df.groupby(["user_id", "month"]).agg(agg_dict).reset_index()
+    monthly = df.groupby(["user_id", "year_month"]).agg(agg_dict).reset_index()
     return monthly
 
 
@@ -215,20 +216,20 @@ def prepare_monthly_sequences(
     """
     X_seq, y_seq, meta, y_prev = [], [], [], []
     for uid in monthly_df["user_id"].unique():
-        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month")
+        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("year_month")
         features = user_data[feature_cols].values
         targets = user_data["target_expenses"].values
-        months = user_data["month"].values
+        periods = user_data["year_month"].values
 
         for i in range(lookback - 1, len(user_data)):
             if np.isnan(targets[i]):
                 continue
-            target_month = int(months[i]) + 1
-            if filter_months is None or target_month in filter_months:
+            target_period = str(pd.Period(periods[i], freq="M") + 1)
+            if filter_months is None or target_period in filter_months:
                 X_seq.append(features[i - lookback + 1 : i + 1])
                 y_seq.append(targets[i])
                 y_prev.append(targets[i - 1])
-                meta.append({"user_id": uid, "month": target_month})
+                meta.append({"user_id": uid, "year_month": target_period})
 
     if not X_seq:
         return np.array([]), np.array([]), [], np.array([])
@@ -253,21 +254,21 @@ def prepare_flat_features(
     lookback = 3
     X_flat, y_flat, meta, y_prev = [], [], [], []
     for uid in monthly_df["user_id"].unique():
-        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("month")
+        user_data = monthly_df[monthly_df["user_id"] == uid].sort_values("year_month")
         features = user_data[feature_cols].values
         targets = user_data["target_expenses"].values
-        months = user_data["month"].values
+        periods = user_data["year_month"].values
 
         for i in range(lookback - 1, len(user_data)):
             if np.isnan(targets[i]):
                 continue
-            target_month = int(months[i]) + 1
-            if filter_months is None or target_month in filter_months:
+            target_period = str(pd.Period(periods[i], freq="M") + 1)
+            if filter_months is None or target_period in filter_months:
                 x = features[i - lookback + 1 : i + 1].flatten()
                 X_flat.append(x)
                 y_flat.append(targets[i])
                 y_prev.append(targets[i - 1])
-                meta.append({"user_id": uid, "month": target_month})
+                meta.append({"user_id": uid, "year_month": target_period})
 
     if not X_flat:
         return np.array([]), np.array([]), [], np.array([])
@@ -353,15 +354,15 @@ def train_rf(
     return model, y_pred
 
 
-def forecast_arima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[dict, int]:
+def forecast_arima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[dict, int]:
     """Fit a pooled, user-normalized ARIMA and forecast the test window.
 
     Each user's monthly expense series is normalized by that user's own
     trailing mean (users sit on a common ~1.0 scale), then averaged across
     users per month into one robust pooled series. A low-order ARIMA is fit on
-    that series and forecast forward over `target_row_months` in sequence.
+    that series and forecast forward over `target_row_periods` in sequence.
 
-    Returns ({month: pooled_scalar}, n_fits). The returned map is the
+    Returns ({year_month: pooled_scalar}, n_fits). The returned map is the
     scale-normalized pooled forecast path; the caller rescales each user by
     that user's own trailing mean (or the global mean for cold-start users),
     giving full test coverage.
@@ -374,25 +375,25 @@ def forecast_arima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[di
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         model = ARIMA(pooled, order=ARIMA_ORDER).fit(method="burg")
         n_fits = 1
-        forecast_vals = model.forecast(len(target_row_months))
+        forecast_vals = model.forecast(len(target_row_periods))
     else:
-        forecast_vals = np.full(len(target_row_months), pooled.mean())
+        forecast_vals = np.full(len(target_row_periods), pooled.mean())
 
-    target_order = sorted(target_row_months)
+    target_order = sorted(target_row_periods)
     return dict(zip(target_order, np.asarray(forecast_vals, dtype=float), strict=True)), n_fits
 
 
-def forecast_sarima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[dict, int]:
+def forecast_sarima_pool(hist: pd.DataFrame, target_row_periods: list) -> tuple[dict, int]:
     """SARIMA variant of the pooled user-normalized forecast.
 
     Same pool construction as :func:`forecast_arima_pool`. Uses a seasonal
     component only when the pooled series spans >= 24 months (<= 12 rows is
     typical for the current 12-month synthetic horizon, which degrades the
-    seasonal order back to plain ARIMA). Returns ({month: scalar}, n_fits).
+    seasonal order back to plain ARIMA). Returns ({year_month: scalar}, n_fits).
     """
     n_fits = 0
     hist = hist[hist["target_expenses"].notna()].copy()
@@ -402,7 +403,7 @@ def forecast_sarima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[d
     user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
     hist["norm"] = hist["target_expenses"] / user_mean
 
-    pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+    pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
     if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
         try:
             if len(pooled) >= 24:
@@ -415,14 +416,14 @@ def forecast_sarima_pool(hist: pd.DataFrame, target_row_months: list) -> tuple[d
             else:
                 model = ARIMA(pooled, order=ARIMA_ORDER).fit(method="burg")
                 n_fits = 1
-            forecast_vals = model.forecast(len(target_row_months))
+            forecast_vals = model.forecast(len(target_row_periods))
         except Exception:
             model = ARIMA(pooled, order=ARIMA_ORDER).fit(method="burg")
-            forecast_vals = model.forecast(len(target_row_months))
+            forecast_vals = model.forecast(len(target_row_periods))
     else:
-        forecast_vals = np.full(len(target_row_months), pooled.mean())
+        forecast_vals = np.full(len(target_row_periods), pooled.mean())
 
-    target_order = sorted(target_row_months)
+    target_order = sorted(target_row_periods)
     return dict(zip(target_order, np.asarray(forecast_vals, dtype=float), strict=True)), n_fits
 
 
@@ -464,28 +465,42 @@ def _train_pytorch_model(
 
     for epoch in range(epochs):
         model.train()
+        total_train_loss = 0.0
+        n_batches = 0
         for xb, yb in train_dl:
             optimizer.zero_grad()
             pred = model(xb)
             loss = criterion(pred, yb)
             loss.backward()
             optimizer.step()
+            total_train_loss += loss.item()
+            n_batches += 1
 
         model.eval()
         with torch.no_grad():
             val_pred = model(X_v)
             val_loss = criterion(val_pred, y_v).item()
 
-        if val_loss < best_val_loss - 1e-6:
+        improved = val_loss < best_val_loss - 1e-6
+        if improved:
             best_val_loss = val_loss
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve = 0
         else:
             no_improve += 1
-            if no_improve >= patience:
-                if verbose:
-                    print(f"    Early stopping at epoch {epoch + 1}")
-                break
+
+        if verbose:
+            status = "best" if improved else f"no improvement {no_improve}/{patience}"
+            print(
+                f"    Epoch {epoch + 1}/{epochs}: "
+                f"train_loss={total_train_loss / n_batches:.6f}, "
+                f"val_loss={val_loss:.6f} ({status})"
+            )
+
+        if not improved and no_improve >= patience:
+            if verbose:
+                print(f"    Early stopping at epoch {epoch + 1}")
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -529,6 +544,7 @@ def train_sequence_variant(
         batch_size=64,
         lr=0.001,
         patience=10,
+        verbose=True,
     )
 
     model.eval()
@@ -542,6 +558,24 @@ def train_sequence_variant(
 # ---------------------------------------------------------------------------
 # Walk-Forward Validation
 # ---------------------------------------------------------------------------
+
+
+def validate_wfv_target_coverage(all_data: pd.DataFrame, folds: list) -> None:
+    """Ensure every walk-forward test target is present before model training."""
+    test_periods = {period for fold in folds for period in fold["test_periods"]}
+    target_row_periods = {
+        str(pd.Period(period, freq="M") - 1) for period in test_periods
+    }
+    target_rows = all_data[all_data["year_month"].isin(target_row_periods)]
+    missing_periods = sorted(
+        target_rows.loc[target_rows["target_expenses"].isna(), "year_month"].unique()
+    )
+
+    if missing_periods:
+        raise ValueError(
+            "Forecaster features are missing targets required by the temporal folds for "
+            f"{missing_periods}. Regenerate them with feature_engineering_forecaster.py."
+        )
 
 
 def run_wfv(
@@ -564,6 +598,7 @@ def run_wfv(
 
     # Aggregate ALL data to monthly once
     all_data = pd.concat(splits.values(), ignore_index=True)
+    validate_wfv_target_coverage(all_data, folds)
     all_monthly = aggregate_to_monthly(all_data, feature_cols)
     print(f"Total monthly samples: {len(all_monthly)}")
     print(f"Unique personas: {all_monthly['user_id'].nunique()}")
@@ -572,23 +607,23 @@ def run_wfv(
 
     for fold_info in folds:
         fold_num = fold_info["fold"]
-        train_months = fold_info["train_months"]
-        test_months = fold_info["test_months"]
+        train_periods = fold_info["train_periods"]
+        test_periods = fold_info["test_periods"]
 
-        print(f"\n--- Fold {fold_num}: Train {train_months} -> Test {test_months} ---")
+        print(f"\n--- Fold {fold_num}: Train {train_periods} -> Test {test_periods} ---")
 
         # For RF and LSTM: use ALL months up to test month for lookback context
-        # Train on train_months only, predict on test_months
-        # But the lookback window can use any months <= max(train_months)
+        # Train on train_periods only, predict on test_periods.
+        # The lookback window can use any preceding chronological period.
 
-        # Training set: months in train_months, with lookback from earlier months
-        train_monthly = all_monthly[all_monthly["month"].isin(train_months)].copy()
+        # Training set: periods in train_periods, with lookback from earlier periods.
+        train_monthly = all_monthly[all_monthly["year_month"].isin(train_periods)].copy()
 
-        # Test set: target months in test_months, with lookback from all prior
-        # months including embargo months (features only, never training labels)
-        embargo_months = fold_info.get("embargo_months", [])
-        context_months = sorted(set(train_months + embargo_months + test_months))
-        test_context = all_monthly[all_monthly["month"].isin(context_months)].copy()
+        # Test set: target periods in test_periods, with lookback from all prior
+        # periods including embargo periods (features only, never training labels).
+        embargo_periods = fold_info.get("embargo_periods", [])
+        context_periods = sorted(set(train_periods + embargo_periods + test_periods))
+        test_context = all_monthly[all_monthly["year_month"].isin(context_periods)].copy()
 
         if train_monthly.empty:
             print(f"  WARNING: Empty train for fold {fold_num}, skipping")
@@ -605,8 +640,8 @@ def run_wfv(
 
         fold_results = {
             "fold": fold_num,
-            "train_months": train_months,
-            "test_months": test_months,
+            "train_periods": train_periods,
+            "test_periods": test_periods,
             "n_train": len(train_monthly),
             "n_test": 0,
             "tier_results": {},
@@ -616,12 +651,12 @@ def run_wfv(
         # Test samples target month T (rows in month T-1). Naive predicts the
         # mean of training targets. Prior actual for MDA = month T-2 expenses
         # (from test_context, not shift within test_actual which has 1 row/user).
-        target_row_months = [m - 1 for m in test_months if m - 1 >= 1]
-        test_actual = test_context[test_context["month"].isin(target_row_months)].copy()
-        test_actual = test_actual.sort_values(["user_id", "month"])
+        target_row_periods = [str(pd.Period(period, freq="M") - 1) for period in test_periods]
+        test_actual = test_context[test_context["year_month"].isin(target_row_periods)].copy()
+        test_actual = test_actual.sort_values(["user_id", "year_month"])
         naive_pred = np.full(len(test_actual), train_monthly["target_expenses"].mean())
-        prior_months = [m - 2 for m in test_months if m - 2 >= 1]
-        prior_rows = test_context[test_context["month"].isin(prior_months)].set_index("user_id")[
+        prior_periods = [str(pd.Period(period, freq="M") - 2) for period in test_periods]
+        prior_rows = test_context[test_context["year_month"].isin(prior_periods)].set_index("user_id")[
             "target_expenses"
         ]
         naive_y_prev = test_actual["user_id"].map(prior_rows).values
@@ -639,19 +674,21 @@ def run_wfv(
         )
 
         # --- Tier 3a (variant): ARIMA (pooled user-normalized; one fit/fold) ---
-        arima_hist = all_monthly[all_monthly["month"] <= max(train_months)]
+        arima_hist = all_monthly[all_monthly["year_month"] <= max(train_periods)]
         user_means = arima_hist.groupby("user_id")["target_expenses"].mean()
         global_mean = float(arima_hist["target_expenses"].mean())
 
         def _rescale_pooled(path_map):
             return np.array(
                 [
-                    path_map.get(int(month), 1.0) * float(user_means.get(uid, global_mean))
-                    for uid, month in zip(test_actual["user_id"], test_actual["month"], strict=True)
+                    path_map.get(period, 1.0) * float(user_means.get(uid, global_mean))
+                    for uid, period in zip(
+                        test_actual["user_id"], test_actual["year_month"], strict=True
+                    )
                 ]
             )
 
-        arima_path, arima_n_fits = forecast_arima_pool(arima_hist, target_row_months)
+        arima_path, arima_n_fits = forecast_arima_pool(arima_hist, target_row_periods)
         if arima_path:
             arima_pred = _rescale_pooled(arima_path)
             arima_metrics = compute_metrics(
@@ -670,7 +707,7 @@ def run_wfv(
             print("  ARIMA: Skipped (empty pooled series)")
 
         # --- Tier 3a (variant): SARIMA (seasonal only when pool >= 24 mo) ---
-        sarima_path, sarima_n_fits = forecast_sarima_pool(arima_hist, target_row_months)
+        sarima_path, sarima_n_fits = forecast_sarima_pool(arima_hist, target_row_periods)
         if sarima_path:
             sarima_pred = _rescale_pooled(sarima_path)
             sarima_metrics = compute_metrics(
@@ -695,7 +732,7 @@ def run_wfv(
         else:
             X_train_rf, y_train_rf, _, _ = prepare_flat_features(train_monthly, feature_cols)
             X_test_rf, y_test_rf, meta_rf, y_prev_rf = prepare_flat_features(
-                test_context, feature_cols, filter_months=test_months
+                test_context, feature_cols, filter_months=test_periods
             )
 
             if len(X_train_rf) > 0 and len(X_test_rf) > 0:
@@ -722,7 +759,7 @@ def run_wfv(
                 train_monthly, feature_cols, lookback=3
             )
             X_test_seq, y_test_seq, meta_seq, y_prev_seq = prepare_monthly_sequences(
-                test_context, feature_cols, lookback=3, filter_months=test_months
+                test_context, feature_cols, lookback=3, filter_months=test_periods
             )
 
             if len(X_train_seq) > 0 and len(X_test_seq) > 0:
@@ -737,7 +774,7 @@ def run_wfv(
                 X_test_flat_s = scaler_seq.transform(X_test_flat)
                 X_test_seq_s = X_test_flat_s.reshape(n_test, seq_len, n_feat)
 
-                for variant in ["gru"]:
+                for variant in ["lstm"]:
                     tier_name = f"tier3_{variant}"
                     model, pred = train_sequence_variant(
                         X_train_seq_s,
@@ -901,7 +938,7 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         if HAS_STATSMODELS and len(pooled) >= ARIMA_MIN_HISTORY:
@@ -926,7 +963,7 @@ def save_models(splits: dict, feature_cols: list, output_dir: Path, winner: str)
         hist = monthly[monthly["target_expenses"].notna()].copy()
         user_mean = hist.groupby("user_id")["target_expenses"].transform("mean").replace(0, np.nan)
         hist["norm"] = hist["target_expenses"] / user_mean
-        pooled = hist.groupby("month")["norm"].mean().sort_index().reset_index(drop=True)
+        pooled = hist.groupby("year_month")["norm"].mean().sort_index().reset_index(drop=True)
         pool_level = float(pooled.mean()) if not pooled.empty else 1.0
         profile_level = float(hist["target_expenses"].mean()) if not hist.empty else pool_level
         model = None

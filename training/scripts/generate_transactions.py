@@ -50,6 +50,7 @@ class Transaction:
     persona_id: str
     month: int
     year: int
+    year_month: str
     date: str
     category: str
     subcategory: str
@@ -66,6 +67,7 @@ class MonthlySummary:
     persona_id: str
     month: int
     year: int
+    year_month: str
     total_income: float
     total_expenses: float
     food_expense: float
@@ -133,13 +135,13 @@ EXPENSE_CATEGORIES = {
     },
 }
 
-# Income patterns (maps to PersonaArchetype.employment_type)
+# Income patterns (maps to PersonaArchetype.income_pattern)
 INCOME_PATTERNS = {
-    "full_time": {"frequency": "monthly", "variation": 0.05},
-    "informal": {"frequency": "irregular", "variation": 0.40},
-    "gig_worker": {"frequency": "irregular", "variation": 0.60},
-    "freelancer": {"frequency": "project_based", "variation": 0.50},
-    "sales": {"frequency": "monthly", "variation": 0.35},
+    "regular": {"frequency": "monthly", "variation": 0.05},
+    "irregular": {"frequency": "irregular", "variation": 0.40},
+    "volatile": {"frequency": "irregular", "variation": 0.60},
+    "project_based": {"frequency": "project_based", "variation": 0.50},
+    "commission_variable": {"frequency": "monthly", "variation": 0.35},
 }
 
 
@@ -182,7 +184,7 @@ def load_personas(json_path: str) -> list[dict]:
         raise PersonaLoadError("Personas file contains no personas")
     
     # Validate required fields
-    required_fields = ["persona_id", "archetype_id", "monthly_income", "employment_type"]
+    required_fields = ["persona_id", "archetype_id", "monthly_income", "income_pattern"]
     missing_fields = []
     
     for i, persona in enumerate(personas[:5]):  # Check first 5
@@ -223,7 +225,7 @@ def validate_persona(persona: dict, index: int) -> list[str]:
         "savings_rate": (int, float),
         "runway_months": (int, float),
         "household_size": (int, float),
-        "employment_type": str,
+        "income_pattern": str,
         "food_expense": (int, float),
         "housing_expense": (int, float),
         "transport_expense": (int, float),
@@ -258,10 +260,10 @@ def generate_income_transactions(
     transactions = []
     persona_id = persona["persona_id"]
     base_income = persona["monthly_income"]
-    employment_type = persona["employment_type"]
+    income_pattern = persona["income_pattern"]
     income_cv = persona.get("income_cv", 0.1)
 
-    pattern = INCOME_PATTERNS.get(employment_type, INCOME_PATTERNS["full_time"])
+    pattern = INCOME_PATTERNS.get(income_pattern, INCOME_PATTERNS["regular"])
 
     if pattern["frequency"] == "none":
         return transactions
@@ -300,10 +302,11 @@ def generate_income_transactions(
         date = f"{year}-{month:02d}-{day:02d}"
 
         transactions.append(Transaction(
-            transaction_id=f"txn_{persona_id}_{month:02d}_income",
+            transaction_id=f"txn_{persona_id}_{year}_{month:02d}_income",
             persona_id=persona_id,
             month=month,
             year=year,
+            year_month=f"{year}-{month:02d}",
             date=date,
             category="income",
             subcategory="salary",
@@ -364,10 +367,11 @@ def generate_expense_transactions(
                 weekly_amount = adjusted_amount / 4 * rng.uniform(0.7, 1.3)
 
                 transactions.append(Transaction(
-                    transaction_id=f"txn_{persona_id}_{month:02d}_{category}_{week}",
+                    transaction_id=f"txn_{persona_id}_{year}_{month:02d}_{category}_{week}",
                     persona_id=persona_id,
                     month=month,
                     year=year,
+                    year_month=f"{year}-{month:02d}",
                     date=date,
                     category=category,
                     subcategory=subcategory,
@@ -383,10 +387,11 @@ def generate_expense_transactions(
             date = f"{year}-{month:02d}-{day:02d}"
 
             transactions.append(Transaction(
-                transaction_id=f"txn_{persona_id}_{month:02d}_{category}",
+                transaction_id=f"txn_{persona_id}_{year}_{month:02d}_{category}",
                 persona_id=persona_id,
                 month=month,
                 year=year,
+                year_month=f"{year}-{month:02d}",
                 date=date,
                 category=category,
                 subcategory=subcategory,
@@ -512,6 +517,7 @@ def compute_monthly_summary(
         persona_id=persona["persona_id"],
         month=month,
         year=year,
+        year_month=f"{year}-{month:02d}",
         total_income=round(total_income, 2),
         total_expenses=round(total_expenses, 2),
         food_expense=round(food, 2),
