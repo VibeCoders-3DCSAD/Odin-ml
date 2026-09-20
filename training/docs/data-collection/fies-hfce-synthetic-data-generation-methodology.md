@@ -3,8 +3,8 @@
 ```json
 {
   "document-type": "methodology",
-  "version": "1.1.3",
-  "date": "2026.09.17",
+  "version": "1.2.0",
+  "date": "2026.09.20",
   "authors": ["Group 4, III-DCSAD"]
 }
 ```
@@ -53,7 +53,7 @@ The methodology follows established temporal-disaggregation and benchmarking pri
 
 ## 1. Primary Household Source: 2023 FIES
 
-The **2023 Family Income and Expenditure Survey (FIES)** is used as the household-level source of annual expenditure. The 2023 round is the latest FIES public-use file released by the PSA at the time of this study; the 2024 and 2025 FIES microdata remain locked and are not available for public research use. Multi-year synthetic calendars therefore replay the 2023 within-year HFCE pattern rather than claiming unpublished FIES vintages. The 36-month horizon used for the v2 forecaster training corpus is a downstream modelling choice: Seasonal ARIMA with period `s=12` requires at least 24 monthly observations to identify the seasonal term. The extra year beyond that floor is calendar labels wrapping 2023 HFCE, not additional FIES vintages.
+The **2023 Family Income and Expenditure Survey (FIES)** remains the household-level benchmark source. The 2024 and 2025 FIES microdata are not used as household anchors. Instead, each synthetic calendar year uses its corresponding published PSA HFCE-by-purpose profile at current prices: 2023-2025 have four quarters, while 2026 has Q1-Q2 only. The minimum v2 forecasting dataset consequently covers `2023-01` through `2026-06` (42 months); it does not fabricate 2026-Q3 or Q4.
 
 For household \(h\) and expenditure category \(c\):
 
@@ -88,29 +88,29 @@ The Philippine Statistics Authority defines family expenditure as household expe
 
 ## 2. External Temporal Source: PSA Quarterly HFCE
 
-To obtain a Philippine within-year spending pattern, the generator uses **2023 Household Final Consumption Expenditure (HFCE) by purpose at constant 2018 prices** from the PSA National Accounts.
+To obtain a Philippine within-year spending pattern, the generator uses **Household Final Consumption Expenditure (HFCE) by purpose at current prices** from the PSA National Accounts. The configured source contains 2023-Q1 through 2026-Q2.
 
 Define:
 
 \[
-H_{c,q}
+H_{y,c,q}
 =
-\text{2023 HFCE for category }c
+\text{HFCE for calendar year }y\text{, category }c
 \text{ in quarter }q
 \]
 
-The 2023 quarterly HFCE values used are:
+The year-specific quarterly values are stored in `training/config/hfce_quarterly_indices.json`. The generator maps each requested calendar year to that year's current-price values; it derives `other` by summing the seven non-essential purpose series. 2026 is deliberately limited to Q1-Q2.
 
 | Category | Q1 | Q2 | Q3 | Q4 |
 |---|---:|---:|---:|---:|
-| Food and non-alcoholic beverages | 1,265,574 | 1,362,290 | 1,230,791 | 1,626,806 |
-| Housing, water, electricity, gas and other fuels | 440,944 | 553,704 | 459,676 | 483,347 |
-| Health | 163,223 | 138,034 | 202,630 | 182,361 |
-| Transport | 357,466 | 308,874 | 372,911 | 333,613 |
-| Education | 209,215 | 186,084 | 213,148 | 230,920 |
-| Miscellaneous goods and services | 517,071 | 472,035 | 551,053 | 705,407 |
+| Food and non-alcoholic beverages | 1,536,533 | 1,685,146 | 1,568,293 | 2,063,577 |
+| Housing, water, electricity, gas and other fuels | 498,032 | 648,514 | 563,329 | 578,496 |
+| Health | 183,907 | 156,776 | 241,079 | 216,430 |
+| Transport | 473,256 | 384,273 | 523,724 | 422,727 |
+| Education | 226,218 | 205,563 | 239,731 | 245,349 |
+| Miscellaneous goods and services | 622,425 | 580,193 | 601,969 | 776,162 |
 
-Constant-price HFCE is preferred because the goal is to capture the **shape of real consumption across quarters** while reducing the direct influence of price inflation.
+Current-price HFCE is used because the supplied PSA series is the selected temporal source. It provides the observed nominal within-year pattern for each calendar year; it does not change the FIES-calibrated household benchmark independently.
 
 HFCE is used only as a **population-level temporal calibration source**. It does not imply that every individual household follows exactly the same quarterly pattern.
 
@@ -603,12 +603,12 @@ H_{\text{Other},q}
 }
 \]
 
-### 2023 residual levels (constant 2018 prices, million PHP)
+### 2023 residual levels (current prices, million PHP)
 
 | | Q1 | Q2 | Q3 | Q4 |
 |---|---:|---:|---:|---:|
-| \(H_{\text{Other},q}\) | 1,255,736 | 1,032,737 | 1,204,677 | 1,562,440 |
-| \(W_{\text{Other},q}\) | 24.84% | 20.43% | 23.83% | **30.91%** |
+| \(H_{\text{Other},q}\) | 1,498,542 | 1,243,808 | 1,396,857 | 1,804,299 |
+| \(W_{\text{Other},q}\) | 25.22% | 20.93% | 23.50% | **30.36%** |
 
 This keeps `Other` seasonality aligned with the generator’s semantic definition (non-essentials), rather than with the narrower Miscellaneous series alone.
 
@@ -892,7 +892,7 @@ The generated monthly values must therefore be interpreted as **synthetic tempor
 
 ## 16. Thesis-Ready Methodology Summary
 
-> The synthetic expenditure generator applies a FIES-anchored, HFCE-calibrated temporal disaggregation methodology. Annual household-category expenditures from the 2023 Family Income and Expenditure Survey are retained as authoritative household-level benchmarks. Because the publicly available FIES microdata do not provide twelve household-level monthly observations, quarterly Household Final Consumption Expenditure by purpose at constant 2018 prices from the Philippine Statistics Authority is used as a population-level temporal calibration source. For each expenditure category, the share of annual HFCE occurring in each quarter is calculated as \(W_{c,q}=H_{c,q}/\sum_{j=1}^{4}H_{c,j}\). Each household's annual FIES expenditure is then multiplied by the corresponding quarterly weight to obtain synthetic quarterly expenditures. In the absence of an appropriate household-level monthly Philippine expenditure indicator, each quarterly amount is distributed equally among its three constituent months. A proportional reconciliation check ensures that the twelve synthetic monthly observations sum exactly to the original annual FIES expenditure. This approach follows established temporal-disaggregation and benchmarking principles in official statistics while clearly distinguishing observed FIES and HFCE values from synthetically generated household-level monthly observations.
+> The synthetic expenditure generator applies a FIES-anchored, HFCE-calibrated temporal disaggregation methodology. Annual household-category expenditure from the 2023 Family Income and Expenditure Survey remains the authoritative household benchmark. PSA quarterly Household Final Consumption Expenditure by purpose at current prices supplies a population-level temporal calibration source for each available calendar year: 2023-2025 include Q1-Q4 and 2026 includes Q1-Q2. For each category and calendar year, the available-quarter share is calculated as \(W_{y,c,q}=H_{y,c,q}/\sum_jH_{y,c,j}\). The complete-year household benchmark is distributed using those weights; the 2026 Q1-Q2 schedule is reconciled to six household months and no later 2026 month is generated. Within a quarter, each monthly amount is an equal third. This approach distinguishes observed FIES and HFCE values from synthetic household-level monthly allocations.
 
 ---
 

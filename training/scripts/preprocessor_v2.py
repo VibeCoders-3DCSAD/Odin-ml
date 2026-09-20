@@ -20,7 +20,7 @@ under a v2-scoped directory by default:
 
     training/datasets/processed_v2/
         train.parquet / val.parquet / test.parquet
-        split_metadata.json         # includes synth_version = "2.0.0"
+        split_metadata.json         # includes synth_version = "2.1.0"
         temporal_folds.json
         feature_columns.json
         pipeline_report.json
@@ -53,6 +53,7 @@ from preprocessor import (  # noqa: E402  (v1, read-only reuse)
     validate_data,
 )
 from synthesizer_v2 import PipelineErrorV2, run_pipeline_v2  # noqa: E402
+from temporal_disaggregation import SYNTH_VERSION  # noqa: E402
 
 SYNTH_V2_OUTPUT_DIR = "synth_v2/"
 
@@ -68,7 +69,7 @@ def run_preprocessing_v2(
     output_dir: str,
     synth_output_dir: str = SYNTH_V2_OUTPUT_DIR,
     personas_per_archetype: int = 1000,
-    num_months: int = 12,
+    num_months: int = 42,
     seed: int = 42,
     skip_fies: bool = False,
     hfce_path: str | None = None,
@@ -177,7 +178,7 @@ def run_preprocessing_v2(
 
     print("\n[7/8] Exporting preprocessed raw data...")
     split_metadata = {
-        "synth_version": "2.0.0",
+        "synth_version": SYNTH_VERSION,
         "seed": seed,
         "split_ratios": {"train": train_ratio, "val": val_ratio, "test": test_ratio},
         "personas": {k: sorted(v) for k, v in split_result["splits"].items()},
@@ -237,7 +238,7 @@ def main() -> None:
     parser.add_argument(
         "--personas-per-archetype", type=int, default=1000, help="Number of personas per archetype"
     )
-    parser.add_argument("--months", type=int, default=12, help="Number of months to generate")
+    parser.add_argument("--months", type=int, default=42, help="Number of months to generate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument(
         "--skip-fies", action="store_true", help="Skip FIES data loading (use default statistics)"

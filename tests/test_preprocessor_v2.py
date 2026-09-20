@@ -6,7 +6,7 @@ Covers:
     P0 - v1 preprocessor.py untouched guard still green (file + functions exist)
     P1 - Full pipeline smoke test: produces train/val/test + split_metadata +
          temporal_folds, matching v1's output layout
-    P2 - split_metadata.json stamps synth_version == "2.0.0"
+    P2 - split_metadata.json stamps synth_version == "2.1.0"
     P3 - Splitting is deterministic given the same seed
     P4 - Split ratios are respected (stratified by pfp_label, same algorithm as v1)
 """
@@ -93,18 +93,18 @@ def test_p1_pipeline_writes_synth_v2_artifacts(tmp_path: Path) -> None:
     assert (synth_dir / "synthesis_report.json").is_file()
 
     report = json.loads((synth_dir / "synthesis_report.json").read_text())
-    assert report["synth_version"] == "2.0.0"
+    assert report["synth_version"] == "2.1.0"
 
 
 # ---------------------------------------------------------------------------
-# P2 — split_metadata.json stamps synth_version == "2.0.0"
+# P2 — split_metadata.json stamps synth_version == "2.1.0"
 # ---------------------------------------------------------------------------
 
 
 def test_p2_split_metadata_stamps_synth_version(tmp_path: Path) -> None:
     output_dir = _run_smoke_pipeline(tmp_path)
     split_metadata = json.loads((output_dir / "split_metadata.json").read_text())
-    assert split_metadata["synth_version"] == "2.0.0"
+    assert split_metadata["synth_version"] == "2.1.0"
 
 
 # ---------------------------------------------------------------------------

@@ -3,8 +3,8 @@
 ```json
 {
   "document-type": "model-evaluation",
-  "version": "1.0.3",
-  "date": "2026.09.17",
+  "version": "1.1.0",
+  "date": "2026.09.20",
   "authors": ["Group 4, III-DCSAD"]
 }
 ```
@@ -52,7 +52,7 @@ The data methodology is **FIES-anchored, HFCE-calibrated temporal disaggregation
 | Component | Source |
 | :--- | :--- |
 | Annual household-category magnitude | 2023 FIES, via FIES-calibrated personas (not a 1:1 `SEQ_NO` replay) |
-| Within-year **quarter** shape, by category | PSA 2023 HFCE by purpose, constant 2018 prices |
+| Within-year **quarter** shape, by category | Original artifact: PSA 2023 HFCE by purpose, constant 2018 prices; next corpus: calendar-year current-price profiles |
 | Q4 national spike (food, residual `other`) | Same HFCE series |
 
 HFCE is a **population-level** temporal calibration source. Every persona receives the same quarterly share of its own annual amount. That is intentional: the generator is not claiming that each household's calendar matches the national accounts.
@@ -66,12 +66,12 @@ v2 does not invent a new persona generator. It reuses v1's 12 archetypes (A–L)
 | Component | Status |
 | :--- | :--- |
 | Month inside a quarter | Equal thirds (`Jan = Feb = Mar = Q1 / 3`) |
-| Years after 2023 | The 2023 12-month HFCE pattern is replayed (`(month - 1) % 12`). 2024 and 2025 FIES public-use files remain locked by the PSA, so those years have no published household annual vintage to re-anchor. |
+| Years after 2023 | Original artifact replays the 2023 profile. The next corpus uses configured 2024-2025 current-price profiles and 2026 Q1-Q2 only; FIES remains the 2023 household anchor. |
 | Income | Still the v1 income path; HFCE is expenditure-only |
 | Intra-month dates and splits | Synthetic |
 | Random Gaussian expense noise | **Removed** |
 
-The generated months are therefore synthetic allocations calibrated to observed annual FIES magnitudes and observed national quarterly consumption, not reconstructed FIES household monthly histories.
+The committed artifact described here was trained before the year-specific current-price update. The next training corpus spans `2023-01` through `2026-06`, using 2023-2025 full-year profiles and 2026 Q1-Q2 only; it requires a separate evaluation and artifact-release run. Generated months remain synthetic allocations calibrated to observed annual FIES magnitudes and observed national quarterly consumption, not reconstructed FIES household monthly histories.
 
 ---
 
@@ -135,7 +135,7 @@ The run **passed**. The committed artifact is real SARIMA, not a renamed ARIMA.
 
 - **Not a controlled v1-versus-v2 model bake-off.** Lower MAPE is expected once a deterministic annual HFCE cycle is injected and the series is long enough for `s=12` to exist. Horizon (12 → 36 months) and fold count (5 → 29) changed at the same time as the generator.
 - **Not household-level monthly truth.** Equal-thirds months and a shared national quarter shape remain assumptions.
-- **Not year-specific seasonality after 2023.** 2024 and 2025 replay the 2023 HFCE calendar because the 2024 and 2025 FIES public-use files remain locked by the PSA. That wrap is a data-availability constraint, not a claim that household spending was identical across those years.
+- **The committed artifact does not contain year-specific seasonality after 2023.** Its 2024-2025 inputs replay the 2023 HFCE calendar. The pending 42-month corpus corrects this using supplied current-price profiles, but no replacement artifact is claimed until it is retrained and evaluated.
 - **Not a full-tier bake-off.** `--skip-rf` and `--skip-torch` excluded Random Forest and GRU from this run.
 
 The defensible claim is narrower: v2 training succeeded on an empirically calibrated quarterly pattern; the seasonal term now has something real to fit; the v1 Gaussian expense path is no longer the within-year engine.

@@ -50,8 +50,10 @@ from temporal_disaggregation import (  # noqa: E402
     DEFAULT_HFCE_PATH,
     HFCE_CATEGORIES,
     SYNTH_VERSION,
+    available_months,
     build_year_schedule,
     month_amount,
+    validate_hfce_coverage,
 )
 
 METHODOLOGY = (
@@ -159,13 +161,10 @@ def generate_persona_transactions_v2(
     """
     Generate a full v2 transaction history for a persona.
 
-    Annual category benchmarks are ``persona[f"{category}_expense"] * 12``
-    (FIES-calibrated persona monthly expense annualized), disaggregated into a
-    12-month HFCE-weighted schedule once per persona, then reused (with
-    calendar-month wraparound) across ``num_months``. Anomalies are injected
-    last, after the reconciled monthly amounts are already fixed, per
-    methodology: "anomalies after reconcile only; no re-reconcile after
-    anomalies".
+    Each calendar year uses its own current-price HFCE profile. Complete years
+    benchmark twelve persona-months; partial 2026 benchmarks its published
+    Q1-Q2 period to six persona-months. Anomalies are injected last, after the
+    reconciled monthly amounts are fixed.
 
     Args:
         persona: Persona dict (same schema as v1 personas).
@@ -188,10 +187,32 @@ def generate_persona_transactions_v2(
     except (KeyError, TypeError) as e:
         raise TransactionGenerationErrorV2(f"Invalid persona data: {e}") from e
 
-    annual_by_category = {
-        category: float(persona.get(f"{category}_expense", 0)) * 12 for category in HFCE_CATEGORIES
-    }
-    schedule = build_year_schedule(annual_by_category, hfce_path=hfce_path)
+    try:
+        validate_hfce_coverage(start_year, start_month, num_months, hfce_path)
+    except Exception as error:
+        raise TransactionGenerationErrorV2(str(error)) from error
+
+    months_by_year: dict[int, set[int]] = {}
+    for month_offset in range(num_months):
+        month = ((start_month - 1 + month_offset) % 12) + 1
+        year = start_year + (start_month - 1 + month_offset) // 12
+        months_by_year.setdefault(year, set()).add(month)
+
+    schedules: dict[int, dict[str, dict[int, float]]] = {}
+    for year, requested_months in months_by_year.items():
+        published_months = set(available_months(year, hfce_path))
+        unavailable_months = requested_months - published_months
+        if unavailable_months:
+            unavailable = ", ".join(str(month) for month in sorted(unavailable_months))
+            raise TransactionGenerationErrorV2(
+                f"HFCE data is unavailable for {year} month(s): {unavailable}"
+            )
+        benchmark_months = len(published_months)
+        benchmark_by_category = {
+            category: float(persona.get(f"{category}_expense", 0)) * benchmark_months
+            for category in HFCE_CATEGORIES
+        }
+        schedules[year] = build_year_schedule(benchmark_by_category, year, hfce_path)
 
     all_transactions: list[Transaction] = []
     all_summaries: list[MonthlySummary] = []
@@ -203,7 +224,7 @@ def generate_persona_transactions_v2(
 
         try:
             income_txns = generate_income_transactions(persona, month, year, rng)
-            expense_txns = generate_expense_transactions_v2(persona, month, year, schedule, rng)
+            expense_txns = generate_expense_transactions_v2(persona, month, year, schedules[year], rng)
 
             month_txns = income_txns + expense_txns
             if inject_anomalies_flag:
@@ -263,7 +284,9 @@ def build_synth_v2_report(
         "methodology": METHODOLOGY,
         "hfce_path": resolved_hfce_path,
         "other_construction": "total - essentials",
-        "annual_anchor": "persona_monthly_category_expense * 12",
+        "benchmark_anchor": "persona_monthly_category_expense * published_months_in_year",
+        "hfce_price_basis": "current_prices",
+        "hfce_coverage": "2023-Q1 through 2026-Q2",
         "within_quarter": "equal_thirds",
         "income_path": "v1_helpers_imported",
         "anomalies": "post_reconcile",
@@ -311,7 +334,9 @@ def main() -> None:
         help="Path to HFCE quarterly indices config (defaults to "
         "training/config/hfce_quarterly_indices.json)",
     )
-    parser.add_argument("--months", type=int, default=12, help="Number of months to generate")
+    parser.add_argument(
+        "--months", type=int, default=42, help="Number of months to generate (default: 42)"
+    )
     parser.add_argument("--start-year", type=int, default=2023, help="Start year")
     parser.add_argument("--start-month", type=int, default=1, help="Start month (1-12)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
@@ -323,6 +348,12 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    try:
+        validate_hfce_coverage(args.start_year, args.start_month, args.months, args.hfce)
+    except Exception as error:
+        print(f"Error: {error}")
+        sys.exit(1)
 
     try:
         personas = load_personas(args.input)

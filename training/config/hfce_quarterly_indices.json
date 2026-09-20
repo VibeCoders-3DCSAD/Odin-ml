@@ -1,139 +1,79 @@
 {
-  "source": "PSA Household Final Consumption Expenditure by Purpose, at Constant 2018 Prices",
-  "year": 2023,
-  "unit": "million PHP (constant 2018 prices)",
-  "notes": "Essentials = food, housing, health, transport, education. 'other' = non-essential residual = Total HFCE minus essentials (equals alcohol/tobacco + clothing + furnishings + communication + recreation + restaurants/hotels + miscellaneous).",
-  "essentials": [
-    "food",
-    "housing",
-    "health",
-    "transport",
-    "education"
-  ],
-  "other_construction": "total - sum(essentials)",
-  "psa_series": {
-    "food": {
-      "Q1": 1265574,
-      "Q2": 1362290,
-      "Q3": 1230791,
-      "Q4": 1626806
+  "source": "PSA Household Final Consumption Expenditure by Purpose, at Current Prices",
+  "unit": "million PHP (current prices)",
+  "price_basis": "current_prices",
+  "covered_period": "2023-Q1 through 2026-Q2",
+  "notes": "2023-2025 contain Q1-Q4. 2026 contains only Q1-Q2 and must not be extrapolated. Essentials = food, housing, health, transport, education. Other is the sum of the seven non-essential PSA purposes.",
+  "essentials": ["food", "housing", "health", "transport", "education"],
+  "other_construction": "alcohol_tobacco + clothing + furnishings + communication + recreation + restaurants_hotels + miscellaneous",
+  "years": {
+    "2023": {
+      "quarters": ["Q1", "Q2", "Q3", "Q4"],
+      "psa_series": {
+        "food": {"Q1": 1536533, "Q2": 1685146, "Q3": 1568293, "Q4": 2063577},
+        "alcohol_tobacco": {"Q1": 78369, "Q2": 77479, "Q3": 81691, "Q4": 116684},
+        "clothing": {"Q1": 58896, "Q2": 50175, "Q3": 66181, "Q4": 88841},
+        "housing": {"Q1": 498032, "Q2": 648514, "Q3": 563329, "Q4": 578496},
+        "furnishings": {"Q1": 110872, "Q2": 106257, "Q3": 127923, "Q4": 137856},
+        "health": {"Q1": 183907, "Q2": 156776, "Q3": 241079, "Q4": 216430},
+        "transport": {"Q1": 473256, "Q2": 384273, "Q3": 523724, "Q4": 422727},
+        "communication": {"Q1": 127704, "Q2": 133589, "Q3": 101839, "Q4": 133865},
+        "recreation": {"Q1": 75297, "Q2": 52575, "Q3": 63229, "Q4": 95553},
+        "education": {"Q1": 226218, "Q2": 205563, "Q3": 239731, "Q4": 245349},
+        "restaurants_hotels": {"Q1": 424979, "Q2": 243540, "Q3": 354025, "Q4": 455338},
+        "miscellaneous": {"Q1": 622425, "Q2": 580193, "Q3": 601969, "Q4": 776162}
+      }
     },
-    "alcohol_tobacco": {
-      "Q1": 50281,
-      "Q2": 44441,
-      "Q3": 44464,
-      "Q4": 69400
+    "2024": {
+      "quarters": ["Q1", "Q2", "Q3", "Q4"],
+      "psa_series": {
+        "food": {"Q1": 1613761, "Q2": 1796719, "Q3": 1681389, "Q4": 2160295},
+        "alcohol_tobacco": {"Q1": 83200, "Q2": 85524, "Q3": 85724, "Q4": 123573},
+        "clothing": {"Q1": 61359, "Q2": 49496, "Q3": 71710, "Q4": 93939},
+        "housing": {"Q1": 538924, "Q2": 691026, "Q3": 602521, "Q4": 614258},
+        "furnishings": {"Q1": 117912, "Q2": 111889, "Q3": 134989, "Q4": 147395},
+        "health": {"Q1": 203367, "Q2": 176663, "Q3": 275282, "Q4": 248325},
+        "transport": {"Q1": 514111, "Q2": 443153, "Q3": 559287, "Q4": 463966},
+        "communication": {"Q1": 134523, "Q2": 144067, "Q3": 106850, "Q4": 139735},
+        "recreation": {"Q1": 85759, "Q2": 63556, "Q3": 67281, "Q4": 106416},
+        "education": {"Q1": 248112, "Q2": 216137, "Q3": 262173, "Q4": 273161},
+        "restaurants_hotels": {"Q1": 501361, "Q2": 284991, "Q3": 407061, "Q4": 501333},
+        "miscellaneous": {"Q1": 680727, "Q2": 645332, "Q3": 663725, "Q4": 858846}
+      }
     },
-    "clothing": {
-      "Q1": 53153,
-      "Q2": 41158,
-      "Q3": 59280,
-      "Q4": 78853
+    "2025": {
+      "quarters": ["Q1", "Q2", "Q3", "Q4"],
+      "psa_series": {
+        "food": {"Q1": 1739445, "Q2": 1901040, "Q3": 1761848, "Q4": 2257594},
+        "alcohol_tobacco": {"Q1": 92366, "Q2": 85636, "Q3": 83953, "Q4": 120253},
+        "clothing": {"Q1": 65217, "Q2": 52194, "Q3": 72156, "Q4": 94741},
+        "housing": {"Q1": 560593, "Q2": 714177, "Q3": 620446, "Q4": 631566},
+        "furnishings": {"Q1": 122249, "Q2": 120288, "Q3": 137708, "Q4": 147487},
+        "health": {"Q1": 229617, "Q2": 198417, "Q3": 314926, "Q4": 269476},
+        "transport": {"Q1": 557835, "Q2": 483535, "Q3": 579338, "Q4": 496667},
+        "communication": {"Q1": 142558, "Q2": 150787, "Q3": 111954, "Q4": 145667},
+        "recreation": {"Q1": 95533, "Q2": 68460, "Q3": 70520, "Q4": 116085},
+        "education": {"Q1": 274427, "Q2": 248037, "Q3": 287688, "Q4": 300009},
+        "restaurants_hotels": {"Q1": 543083, "Q2": 311922, "Q3": 438239, "Q4": 550139},
+        "miscellaneous": {"Q1": 728607, "Q2": 687796, "Q3": 705938, "Q4": 913943}
+      }
     },
-    "housing": {
-      "Q1": 440944,
-      "Q2": 553704,
-      "Q3": 459676,
-      "Q4": 483347
-    },
-    "furnishings": {
-      "Q1": 93612,
-      "Q2": 89372,
-      "Q3": 107537,
-      "Q4": 117557
-    },
-    "health": {
-      "Q1": 163223,
-      "Q2": 138034,
-      "Q3": 202630,
-      "Q4": 182361
-    },
-    "transport": {
-      "Q1": 357466,
-      "Q2": 308874,
-      "Q3": 372911,
-      "Q4": 333613
-    },
-    "communication": {
-      "Q1": 120846,
-      "Q2": 129982,
-      "Q3": 100933,
-      "Q4": 136075
-    },
-    "recreation": {
-      "Q1": 69069,
-      "Q2": 48607,
-      "Q3": 59201,
-      "Q4": 84979
-    },
-    "education": {
-      "Q1": 209215,
-      "Q2": 186084,
-      "Q3": 213148,
-      "Q4": 230920
-    },
-    "restaurants_hotels": {
-      "Q1": 351703,
-      "Q2": 207143,
-      "Q3": 282209,
-      "Q4": 370170
-    },
-    "miscellaneous": {
-      "Q1": 517071,
-      "Q2": 472035,
-      "Q3": 551053,
-      "Q4": 705407
-    },
-    "total": {
-      "Q1": 3692158,
-      "Q2": 3581723,
-      "Q3": 3683833,
-      "Q4": 4419487
-    }
-  },
-  "categories": {
-    "food": {
-      "psa_label": "Food and non-alcoholic beverages",
-      "Q1": 1265574,
-      "Q2": 1362290,
-      "Q3": 1230791,
-      "Q4": 1626806
-    },
-    "housing": {
-      "psa_label": "Housing, water, electricity, gas and other fuels",
-      "Q1": 440944,
-      "Q2": 553704,
-      "Q3": 459676,
-      "Q4": 483347
-    },
-    "health": {
-      "psa_label": "Health",
-      "Q1": 163223,
-      "Q2": 138034,
-      "Q3": 202630,
-      "Q4": 182361
-    },
-    "transport": {
-      "psa_label": "Transport",
-      "Q1": 357466,
-      "Q2": 308874,
-      "Q3": 372911,
-      "Q4": 333613
-    },
-    "education": {
-      "psa_label": "Education",
-      "Q1": 209215,
-      "Q2": 186084,
-      "Q3": 213148,
-      "Q4": 230920
-    },
-    "other": {
-      "psa_label": "Non-essential residual (Total HFCE - essentials)",
-      "construction": "total - (food + housing + health + transport + education)",
-      "Q1": 1255736,
-      "Q2": 1032737,
-      "Q3": 1204677,
-      "Q4": 1562440
+    "2026": {
+      "quarters": ["Q1", "Q2"],
+      "psa_series": {
+        "food": {"Q1": 1780850, "Q2": 2058217},
+        "alcohol_tobacco": {"Q1": 98405, "Q2": 88583},
+        "clothing": {"Q1": 74661, "Q2": 57971},
+        "housing": {"Q1": 596954, "Q2": 796195},
+        "furnishings": {"Q1": 129990, "Q2": 129639},
+        "health": {"Q1": 251186, "Q2": 226845},
+        "transport": {"Q1": 593896, "Q2": 522412},
+        "communication": {"Q1": 151504, "Q2": 160556},
+        "recreation": {"Q1": 104660, "Q2": 71377},
+        "education": {"Q1": 300579, "Q2": 289229},
+        "restaurants_hotels": {"Q1": 592866, "Q2": 331836},
+        "miscellaneous": {"Q1": 778171, "Q2": 754238}
+      }
     }
   }
 }

@@ -57,7 +57,11 @@ from generate_transactions_v2 import (  # noqa: E402
     export_transactions_v2,
     generate_persona_transactions_v2,
 )
-from temporal_disaggregation import DEFAULT_HFCE_PATH, SYNTH_VERSION  # noqa: E402
+from temporal_disaggregation import (  # noqa: E402
+    DEFAULT_HFCE_PATH,
+    SYNTH_VERSION,
+    validate_hfce_coverage,
+)
 
 
 class PipelineErrorV2(Exception):
@@ -95,7 +99,7 @@ def run_pipeline_v2(
     input_path: str,
     output_path: str,
     personas_per_archetype: int = 1000,
-    num_months: int = 12,
+    num_months: int = 42,
     seed: int = 42,
     skip_fies: bool = False,
     strict: bool = False,
@@ -124,6 +128,11 @@ def run_pipeline_v2(
     print(f"Months: {num_months}")
     print(f"Seed: {seed}")
     print(f"HFCE config: {hfce_path or DEFAULT_HFCE_PATH}")
+
+    try:
+        validate_hfce_coverage(2023, 1, num_months, hfce_path)
+    except Exception as error:
+        raise PipelineErrorV2(f"Requested HFCE timeline is unavailable: {error}") from error
 
     total_steps = 5
 
@@ -275,7 +284,7 @@ def run_pipeline_v2(
     print(f"\nOutput directory: {output_path}")
     print("  personas.json / personas.parquet")
     print("  transactions.parquet / monthly_summaries.parquet")
-    print("  synthesis_report.json (synth_version = 2.0.0)")
+    print(f"  synthesis_report.json (synth_version = {SYNTH_VERSION})")
 
     return report
 
@@ -329,7 +338,7 @@ Examples:
         help="Number of personas to generate per archetype (default: 1000)",
     )
     parser.add_argument(
-        "--months", type=int, default=12, help="Number of months to generate (default: 12)"
+        "--months", type=int, default=42, help="Number of months to generate (default: 42)"
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)"

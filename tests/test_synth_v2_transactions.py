@@ -9,7 +9,7 @@ Validation IDs mirror methodology §13 / the v2 implementation plan:
     V2 - Population quarterly shares match HFCE weights
     V3 - Monthly transaction sums == HFCE-derived schedule
     V4 - Deterministic expenses given seed + HFCE config
-    V5 - Report synth_version == "2.0.0"
+    V5 - Report synth_version == "2.1.0"
 
 All exactness checks (V1-V3) run with anomalies disabled, since anomaly
 injection intentionally perturbs individual transaction amounts *after*
@@ -115,7 +115,7 @@ def test_v2_quarterly_shares_match_hfce_weights() -> None:
     )
     monthly_totals = _category_monthly_expense_totals(transactions)
 
-    levels = load_hfce_levels()
+    levels = load_hfce_levels(2023)
 
     for category in HFCE_CATEGORIES:
         annual_generated = sum(
@@ -151,7 +151,7 @@ def test_v3_monthly_sums_equal_schedule() -> None:
     annual_by_category = {
         category: persona.get(f"{category}_expense", 0) * 12 for category in HFCE_CATEGORIES
     }
-    schedule = build_year_schedule(annual_by_category)
+    schedule = build_year_schedule(annual_by_category, 2023)
 
     for category in HFCE_CATEGORIES:
         for month in range(1, 13):
@@ -173,7 +173,7 @@ def test_weekly_category_split_sums_exactly() -> None:
     assert len(food_txns) == 4
 
     annual_by_category = {"food": persona["food_expense"] * 12}
-    schedule = build_year_schedule(annual_by_category)
+    schedule = build_year_schedule(annual_by_category, 2023)
     expected = schedule["food"][1]
 
     assert sum(t.amount for t in food_txns) == pytest.approx(expected, abs=0.01)
@@ -206,8 +206,31 @@ def test_v4_different_seed_can_differ() -> None:
     assert dates_a != dates_b
 
 
+def test_calendar_year_profiles_cover_2023_to_2026_q2_only() -> None:
+    persona = _persona()
+    transactions, summaries = generate_persona_transactions_v2(
+        persona, num_months=42, seed=42, inject_anomalies_flag=False
+    )
+
+    assert [summary.year_month for summary in summaries] == (
+        [f"{year}-{month:02d}" for year in range(2023, 2026) for month in range(1, 13)]
+        + ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+    )
+    assert len(summaries) == 42
+    assert all(not summary.year_month.startswith("2026-07") for summary in summaries)
+
+    food_by_year_month = defaultdict(float)
+    for transaction in transactions:
+        if transaction.transaction_type == "expense" and transaction.category == "food":
+            food_by_year_month[(transaction.year, transaction.month)] += transaction.amount
+    assert food_by_year_month[(2023, 1)] != pytest.approx(food_by_year_month[(2024, 1)])
+    assert sum(food_by_year_month[(2026, month)] for month in range(1, 7)) == pytest.approx(
+        persona["food_expense"] * 6, abs=0.05
+    )
+
+
 # ---------------------------------------------------------------------------
-# V5 — Report synth_version == "2.0.0"
+# V5 — Report synth_version == "2.1.0"
 # ---------------------------------------------------------------------------
 
 
@@ -217,14 +240,16 @@ def test_v5_report_stamps_synth_version() -> None:
 
     report = build_synth_v2_report(summaries)
 
-    assert report["synth_version"] == "2.0.0"
+    assert report["synth_version"] == "2.1.0"
     assert report["v1_untouched"] is True
     assert report["parallel_to"] == "training/scripts/generate_transactions.py"
+    assert report["hfce_price_basis"] == "current_prices"
+    assert report["hfce_coverage"] == "2023-Q1 through 2026-Q2"
     assert report["total_months"] == 12
 
 
 def test_v5_report_empty_summaries_no_crash() -> None:
     report = build_synth_v2_report([])
-    assert report["synth_version"] == "2.0.0"
+    assert report["synth_version"] == "2.1.0"
     assert report["total_months"] == 0
     assert report["total_transaction_count"] == 0

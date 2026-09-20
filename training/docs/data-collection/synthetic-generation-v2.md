@@ -3,8 +3,8 @@
 ```json
 {
   "document-type": "runbook",
-  "version": "1.0.3",
-  "date": "2026.09.17",
+  "version": "1.1.0",
+  "date": "2026.09.20",
   "authors": ["Group 4, III-DCSAD"]
 }
 ```
@@ -14,7 +14,7 @@ proportional benchmarking. See
 [`fies-hfce-synthetic-data-generation-methodology.md`](fies-hfce-synthetic-data-generation-methodology.md)
 for the full derivation.
 
-**`synth_version`:** `"2.0.0"`
+**`synth_version`:** `"2.1.0"`
 
 ---
 
@@ -72,7 +72,7 @@ PYTHONPATH=training/scripts python training/scripts/synthesizer_v2.py \
   --output synth_v2/ \
   --hfce training/config/hfce_quarterly_indices.json \
   --personas-per-archetype 1000 \
-  --months 12 \
+   --months 42 \
   --seed 42
 ```
 
@@ -90,21 +90,21 @@ python training/scripts/preprocessor_v2.py \
   --synth-output synth_v2/ \
   --hfce training/config/hfce_quarterly_indices.json \
   --personas-per-archetype 1000 \
-  --months 36 \
+   --months 42 \
   --seed 42
 ```
 
-`--months 36` is the recommended **training** horizon because the spending
+`--months 42` is the minimum **training** horizon because the spending
 forecaster's SARIMA seasonal period is `s=12`. A seasonal AR lag of 12 is
 unidentified below 24 monthly observations (`train_forecaster.py` then falls
-back to plain ARIMA). 36 months clears that gate and leaves held-out
-walk-forward folds in which the seasonal term is actually fit. Years after
-2023 still wrap the 2023 HFCE pattern because 2024 and 2025 FIES public-use
-files remain locked by the PSA. The synthesizer default remains 12 months
-when you are not training the seasonal forecaster.
+back to plain ARIMA). Forty-two months clear that gate and leave held-out
+walk-forward folds in which the seasonal term is actually fit. Each full year
+uses its own supplied current-price HFCE profile. The final six months use
+2026 Q1-Q2 only; the generator rejects 2026-Q3 and later because no values
+are configured.
 
 This writes `training/datasets/processed_v2/{train,val,test}.parquet`,
-`split_metadata.json` (stamped with `synth_version = "2.0.0"`),
+`split_metadata.json` (stamped with `synth_version = "2.1.0"`),
 `temporal_folds.json`, `feature_columns.json`, and `pipeline_report.json` — the
 same layout v1's `preprocessor.py` writes to `training/datasets/processed/`.
 
@@ -124,7 +124,7 @@ PYTHONPATH=training/scripts python training/scripts/generate_transactions_v2.py 
   --input synth_v2/personas.json \
   --output synth_v2/ \
   --hfce training/config/hfce_quarterly_indices.json \
-  --months 12 \
+   --months 42 \
   --seed 42
 ```
 
@@ -147,7 +147,7 @@ synth_v2/
   personas.parquet
   transactions.parquet
   monthly_summaries.parquet
-  synthesis_report.json        # stamps synth_version = "2.0.0"
+  synthesis_report.json        # stamps synth_version = "2.1.0"
   expense_ratios.json          # if FIES data was loaded (not --skip-fies)
   fies_stats.json              # if FIES data was loaded (not --skip-fies)
 ```
@@ -208,7 +208,8 @@ Checks covered (methodology §13, mirrored in `tests/test_synth_v2_transactions.
 | V2 | Population quarterly shares reproduce the HFCE quarterly weights \(W_{c,q}\). |
 | V3 | Monthly transaction sums equal the HFCE-derived monthly schedule amount. |
 | V4 | Deterministic output given the same seed + HFCE config. |
-| V5 | `synthesis_report.json` stamps `synth_version == "2.0.0"`. |
+| V5 | `synthesis_report.json` stamps `synth_version == "2.1.0"`. |
+| V6 | The 42-month timeline ends at `2026-06`; 2026 Q1-Q2 reconciles to six persona-months and Q3-Q4 are rejected. |
 
 Checks covered for `preprocessor_v2.py` (`tests/test_preprocessor_v2.py`):
 
@@ -216,7 +217,7 @@ Checks covered for `preprocessor_v2.py` (`tests/test_preprocessor_v2.py`):
 | :--- | :--- |
 | P0 | v1's `preprocessor.py` still defines `split_personas`, `generate_temporal_folds`, `export_results` (untouched guard). |
 | P1 | Full pipeline smoke test produces the v1-shaped output layout (`train/val/test.parquet`, `split_metadata.json`, `temporal_folds.json`, `feature_columns.json`, `pipeline_report.json`) plus `synth_v2/` artifacts. |
-| P2 | `split_metadata.json` stamps `synth_version == "2.0.0"`. |
+| P2 | `split_metadata.json` stamps `synth_version == "2.1.0"`. |
 | P3 | Persona split is deterministic given the same seed. |
 | P4 | Split sizes respect the requested train/val/test ratios. |
 
@@ -233,9 +234,8 @@ To avoid overstating what the synthetic data represents:
   income-generation helpers unchanged. Only expense amounts are HFCE-disaggregated.
 - **Equal-thirds within a quarter is a modeling assumption**, not an observed
   household-level monthly pattern (methodology §7).
-- **Multi-year runs reuse the same 12-month HFCE pattern every year** (calendar month →
-  HFCE month index via `(month - 1) % 12`). The 2023 FIES public-use file is the latest
-  released by the PSA; 2024 and 2025 FIES microdata remain locked. The wrap is a
-  data-availability constraint, not a claim of year-specific seasonality beyond 2023.
+- **Multi-year runs use configured calendar-year HFCE profiles.** 2023-2025 include
+  Q1-Q4; 2026 includes Q1-Q2 only. The 2026 six-month schedule is reconciled to six
+  persona-months, and the generator refuses unconfigured future periods.
 - **`Other` is a residual bucket** (Total HFCE − essentials), not the narrower PSA
   "Miscellaneous goods and services" series alone (methodology §10).
