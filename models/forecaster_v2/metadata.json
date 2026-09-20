@@ -1,5 +1,5 @@
 {
-  "model_id": "forecaster-tier3_sarima",
+  "model_id": "forecaster-v2-tier3_sarima",
   "family": "forecaster",
   "created_at": "2026-09-17T10:55:41.752038Z",
   "training_commit": "4042846",

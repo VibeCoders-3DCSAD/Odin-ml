@@ -13,6 +13,7 @@ from app.models.loader import ModelLoader
 
 PFP_MODULE = "pfp"
 FORECASTER_MODULE = "forecaster"
+FORECASTER_ARTIFACT_MODULE = "forecaster_v2"
 ANOMALY_MODULE = "anomaly"
 BUDGET_MODULE = "budget"
 ANOMALY_ARTIFACT = "anomaly_detector.joblib"
@@ -162,16 +163,16 @@ class ModelRegistry:
         )
 
     def _load_forecaster(self) -> ModuleModel:
-        evaluation = self.loader.load_json(FORECASTER_MODULE, "evaluation.json")
+        evaluation = self.loader.load_json(FORECASTER_ARTIFACT_MODULE, "evaluation.json")
         feature_columns = evaluation.get("feature_columns", [])
-        output_dir = self.loader.resolve(FORECASTER_MODULE)
+        output_dir = self.loader.resolve(FORECASTER_ARTIFACT_MODULE)
         artifact_name, model = _resolve_forecaster_artifact(evaluation, output_dir)
         return ModuleModel(
             module=FORECASTER_MODULE,
             model=model,
             evaluation=evaluation,
             feature_columns=feature_columns,
-            metadata=self._metadata(FORECASTER_MODULE),
+            metadata=self._metadata(FORECASTER_ARTIFACT_MODULE),
         )
 
     def _load_anomaly(self) -> ModuleModel:

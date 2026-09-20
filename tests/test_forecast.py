@@ -30,7 +30,7 @@ def test_forecast_predict_arima_success(client):
     assert resp.status_code == 200
     assert body["status"] == "SUCCESS"
     assert body["forecasts"][0]["amount"] > 0
-    assert body["model_version"] == "forecaster-tier3_sarima"
+    assert body["model_version"] == "forecaster-v2-tier3_sarima"
 
 
 class _StubPooled:
