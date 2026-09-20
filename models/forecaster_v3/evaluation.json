@@ -1,0 +1,30 @@
+{
+  "evaluation_level": "internal_synthetic_target_only",
+  "external_validation_gate": "not_satisfied",
+  "served_forecaster_unchanged": true,
+  "feature_columns": [
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "rolling_mean_3",
+    "month_sin",
+    "month_cos"
+  ],
+  "test_households": 1194,
+  "training_sample": "deterministic 1-in-20 household sample",
+  "resource_limits": {
+    "sample_modulus": 20,
+    "rf_workers": 1,
+    "rf_estimators": 100,
+    "lstm_batch_size": 1024
+  },
+  "candidate_mae": {
+    "naive": 2653.2700333851553,
+    "arima": 2920.6875812352464,
+    "sarima": 2957.085294696501
+  },
+  "candidates_skipped": {
+    "random_forest": true,
+    "torch": true
+  }
+}

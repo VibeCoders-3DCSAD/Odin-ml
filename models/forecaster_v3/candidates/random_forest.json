@@ -1,0 +1,9 @@
+{
+  "candidate": "random_forest",
+  "evaluation_level": "internal_synthetic_target_only",
+  "training_scope": "full_household_corpus",
+  "train_rows": 4800096,
+  "test_rows": 1004090,
+  "mae": 1920.35484854044,
+  "served_forecaster_unchanged": true
+}

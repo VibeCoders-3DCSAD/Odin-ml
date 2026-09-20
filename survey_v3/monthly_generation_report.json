@@ -1,0 +1,22 @@
+{
+  "timeline": [
+    "2023-01",
+    "2026-06"
+  ],
+  "hfce_config_fingerprint_sha256": "77dc22d8e732b0b08ea62b8e7ea10f7ac3861ee83d1909b260fadad10cc4aa2d",
+  "observed_fields": [
+    "household_id_v3",
+    "food",
+    "housing_water",
+    "health",
+    "transport",
+    "education",
+    "other"
+  ],
+  "synthetic_fields": [
+    "year_month",
+    "amount",
+    "total_expenses"
+  ],
+  "accounting": "Each available year/category schedule reconciles to the observed annual benchmark."
+}

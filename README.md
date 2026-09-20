@@ -139,6 +139,24 @@ for the full runbook and
 [`training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md`](training/docs/data-collection/fies-hfce-synthetic-data-generation-methodology.md)
 for the methodology.
 
+## Survey-Only Forecast v3 (unserved research pipeline)
+
+V3 selects eligible observed 2023 FIES households, pseudonymizes their identifiers, and
+allocates their observed annual expenditure categories over published PSA HFCE quarterly
+profiles. It writes only `survey_v3/`, `training/datasets/processed_v3/`, and
+`training/datasets/forecaster_v3/`; it does not generate personas, transactions, income,
+debt, or behavioral fields.
+
+```bash
+python training/scripts/survey_pipeline_v3.py \
+  --input training/datasets/raw/PHL-PSA-FIES-2023-V1-PUF/<fies-file>.csv
+```
+
+V3 monthly targets are synthetic allocations, not observed household histories. Its
+evaluation cannot release or replace the served forecaster without external validation and
+an explicit artifact-release decision. See
+`training/docs/data-collection/survey-only-forecast-v3.md` and `docs/models/forecaster-v3.md`.
+
 ## Tech Stack
 
 - Python `3.14.4` (runtime pinned by `.python-version`)

@@ -1,0 +1,36 @@
+{
+  "evaluation_level": "internal_synthetic_target_only",
+  "training_scope": "full_household_corpus",
+  "ranking_by_mae": [
+    {
+      "candidate": "naive",
+      "evaluation_level": "internal_synthetic_target_only",
+      "training_scope": "full_household_corpus",
+      "train_rows": 4800096,
+      "test_rows": 1004090,
+      "mae": 2520.5590428152736,
+      "served_forecaster_unchanged": true
+    },
+    {
+      "candidate": "arima",
+      "evaluation_level": "internal_synthetic_target_only",
+      "training_scope": "full_household_corpus",
+      "train_rows": 4800096,
+      "test_rows": 1004090,
+      "mae": 2776.4997445449667,
+      "served_forecaster_unchanged": true
+    },
+    {
+      "candidate": "sarima",
+      "evaluation_level": "internal_synthetic_target_only",
+      "training_scope": "full_household_corpus",
+      "train_rows": 4800096,
+      "test_rows": 1004090,
+      "mae": 2810.8265602195793,
+      "served_forecaster_unchanged": true
+    }
+  ],
+  "served_forecaster_unchanged": true,
+  "release_eligible": false,
+  "release_reason": "External validation is required before any serving decision."
+}

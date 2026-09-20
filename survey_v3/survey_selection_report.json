@@ -1,0 +1,108 @@
+{
+  "input_rows": 163268,
+  "exclusions": {
+    "duplicate_or_missing_seq_no": 0,
+    "missing_required_numeric": 0,
+    "non_positive_total_or_household_size": 0,
+    "negative_category_expenditure": 0,
+    "negative_other_residual": 0
+  },
+  "selected_rows": 163268,
+  "geography_distribution": {
+    "13": 20690,
+    "3": 13078,
+    "6": 10832,
+    "19": 10465,
+    "8": 10264,
+    "10": 9538,
+    "7": 9266,
+    "11": 9172,
+    "17": 9067,
+    "14": 9024,
+    "5": 8828,
+    "4": 8156,
+    "16": 8093,
+    "12": 7086,
+    "2": 6902,
+    "9": 6720,
+    "1": 6087
+  },
+  "missingness": {
+    "household_id_v3": 0,
+    "region": 0,
+    "household_size": 0,
+    "annual_total": 0,
+    "food": 0,
+    "housing_water": 0,
+    "health": 0,
+    "transport": 0,
+    "education": 0,
+    "other": 0
+  },
+  "category_distribution": {
+    "food": {
+      "count": 163268.0,
+      "mean": 101707.61795814245,
+      "std": 54935.1563601365,
+      "min": 3593.5,
+      "25%": 64920.0,
+      "50%": 89869.0,
+      "75%": 124996.0,
+      "max": 1363779.0
+    },
+    "housing_water": {
+      "count": 163268.0,
+      "mean": 54093.32689198128,
+      "std": 59331.42246728191,
+      "min": 1770.0,
+      "25%": 21720.0,
+      "50%": 37860.0,
+      "75%": 66750.0,
+      "max": 4122030.0
+    },
+    "health": {
+      "count": 163268.0,
+      "mean": 6971.785628537129,
+      "std": 26318.059749558266,
+      "min": 0.0,
+      "25%": 690.0,
+      "50%": 2035.0,
+      "75%": 5245.0,
+      "max": 2412148.0
+    },
+    "transport": {
+      "count": 163268.0,
+      "mean": 15813.107253105323,
+      "std": 21239.386775782255,
+      "min": 0.0,
+      "25%": 4920.0,
+      "50%": 10200.0,
+      "75%": 18928.5,
+      "max": 1013500.0
+    },
+    "education": {
+      "count": 163268.0,
+      "mean": 8202.995700320944,
+      "std": 24212.807744927595,
+      "min": 0.0,
+      "25%": 0.0,
+      "50%": 550.0,
+      "75%": 5500.0,
+      "max": 1800000.0
+    },
+    "other": {
+      "count": 163268.0,
+      "mean": 56366.51651297253,
+      "std": 85498.72674787641,
+      "min": 678.0,
+      "25%": 20020.75,
+      "50%": 34542.0,
+      "75%": 63595.25,
+      "max": 5477844.0
+    }
+  },
+  "selection_contract_version": "3.0.0",
+  "source_file": "FIES PUF 2023 Volume2 Household Summary.CSV",
+  "source_fingerprint_sha256": "44f660c8abaa69e8cb3ad208f0cab0074e85e6035565847210ea2eb4b08c87e8",
+  "weighted_diagnostics": "RFACT is not used for training or diagnostics in v3."
+}
