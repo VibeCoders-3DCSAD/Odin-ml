@@ -60,7 +60,7 @@ def _row_count(path: Path) -> int:
 def _mae_stream(path: Path, predictor, columns: list[str] | None = None) -> tuple[float, int]:
     absolute_error = 0.0
     count = 0
-    required = ["household_id_v3", "year_month", "lag_1", "target_expenses"]
+    required = ["household_id_v3", "year_month", "target_expenses"]
     for frame in _batches(path, list(dict.fromkeys([*required, *(columns or [])]))):
         usable = frame.dropna(subset=["target_expenses"])
         if usable.empty:
@@ -99,36 +99,24 @@ def _classical_mae(train_path: Path, test_path: Path, candidate: str) -> tuple[f
         else SARIMAX(normalized, order=(1, 1, 0), seasonal_order=(1, 0, 0, 12)).fit(disp=False)
     )
     path = dict(zip(history.index, model.predict(start=0, end=len(history) - 1), strict=True))
-    levels: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
-    for frame in _batches(test_path, ["household_id_v3", "lag_1", "target_expenses"]):
-        usable = frame.dropna(subset=["target_expenses"])
-        grouped = usable.groupby("household_id_v3")["lag_1"].agg(["sum", "count"])
-        for household, row in grouped.iterrows():
-            levels[household][0] += float(row["sum"])
-            levels[household][1] += float(row["count"])
-    default_level = float(history.mean())
 
     def predictor(frame: pd.DataFrame) -> np.ndarray:
         return np.asarray(
             [
-                float(path.get(period, 1.0)) * (levels[household][0] / levels[household][1])
-                if household in levels
-                else default_level
-                for household, period in zip(
-                    frame["household_id_v3"], frame["year_month"], strict=True
-                )
+                float(path.get(period, 1.0)) * scale
+                for period, scale in zip(frame["year_month"], frame["user_scale"], strict=True)
             ]
         )
 
-    return _mae_stream(test_path, predictor)
+    return _mae_stream(test_path, predictor, ["user_scale"])
 
 
 def _rf_mae(
     train_path: Path, test_path: Path, features: list[str], estimators: int, workers: int
 ) -> tuple[float, int]:
     train_rows = sum(
-        len(frame.dropna(subset=["target_expenses"]))
-        for frame in _batches(train_path, [*features, "target_expenses"])
+        len(frame.dropna(subset=["target_ratio", "user_scale"]))
+        for frame in _batches(train_path, [*features, "target_ratio", "user_scale"])
     )
     LOGGER.info("Preparing disk-backed RF training matrix with %d rows", train_rows)
     with tempfile.TemporaryDirectory(prefix="odin-v3-rf-") as temporary:
@@ -136,11 +124,11 @@ def _rf_mae(
         x = np.memmap(x_path, dtype="float32", mode="w+", shape=(train_rows, len(features)))
         y = np.memmap(y_path, dtype="float32", mode="w+", shape=(train_rows,))
         offset = 0
-        for frame in _batches(train_path, [*features, "target_expenses"]):
-            usable = frame.dropna(subset=["target_expenses"])
+        for frame in _batches(train_path, [*features, "target_ratio", "user_scale"]):
+            usable = frame.dropna(subset=["target_ratio", "user_scale"])
             next_offset = offset + len(usable)
             x[offset:next_offset] = usable[features].to_numpy(dtype=np.float32)
-            y[offset:next_offset] = usable["target_expenses"].to_numpy(dtype=np.float32)
+            y[offset:next_offset] = usable["target_ratio"].to_numpy(dtype=np.float32)
             offset = next_offset
         model = RandomForestRegressor(
             n_estimators=0,
@@ -158,9 +146,10 @@ def _rf_mae(
             LOGGER.info("Completed RF trees: %d/%d", model.n_estimators, estimators)
 
         def predictor(frame: pd.DataFrame) -> np.ndarray:
-            return model.predict(frame[features].to_numpy(dtype=np.float32))
+            ratios = model.predict(frame[features].to_numpy(dtype=np.float32))
+            return ratios * frame["user_scale"].to_numpy(dtype=np.float32)
 
-        return _mae_stream(test_path, predictor, features)
+        return _mae_stream(test_path, predictor, [*features, "user_scale"])
 
 
 def _sequence_batches(
@@ -308,7 +297,9 @@ def run(
     features = json.loads((source / "feature_columns.json").read_text())["feature_columns"]
     LOGGER.info("Running full-corpus %s candidate", candidate)
     if candidate == "naive":
-        mae, test_rows = _mae_stream(test_path, lambda frame: frame["lag_1"].to_numpy())
+        mae, test_rows = _mae_stream(
+            test_path, lambda frame: frame["user_scale"].to_numpy(), ["user_scale"]
+        )
     elif candidate in {"arima", "sarima"}:
         mae, test_rows = _classical_mae(train_path, test_path, candidate)
     elif candidate == "random_forest":
@@ -326,6 +317,8 @@ def run(
     result = {
         "candidate": candidate,
         "evaluation_level": "internal_synthetic_target_only",
+        "evaluation_contract": "three_prior_month_user_relative_ratio_v1",
+        "eligible_history_months": 3,
         "training_scope": "full_household_corpus",
         "train_rows": _row_count(train_path),
         "test_rows": test_rows,

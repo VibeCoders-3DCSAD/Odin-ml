@@ -13,7 +13,12 @@ from logging_v3 import configure_logging, get_logger
 
 LOGGER = get_logger("feature_engineering")
 
-FEATURE_COLUMNS = ["lag_1", "lag_2", "lag_3", "rolling_mean_3", "month_sin", "month_cos"]
+FEATURE_COLUMNS = [
+    "lag_1_ratio",
+    "lag_2_ratio",
+    "lag_3_ratio",
+    "rolling_std_3_ratio",
+]
 
 
 def build_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -22,12 +27,16 @@ def build_features(frame: pd.DataFrame) -> pd.DataFrame:
     for lag in range(1, 4):
         output[f"lag_{lag}"] = groups.shift(lag)
     output["rolling_mean_3"] = groups.transform(
-        lambda values: values.shift(1).rolling(3, min_periods=1).mean()
+        lambda values: values.shift(1).rolling(3, min_periods=3).mean()
     )
-    month = pd.PeriodIndex(output["year_month"], freq="M").month
-    output["month_sin"] = __import__("numpy").sin(2 * __import__("numpy").pi * month / 12)
-    output["month_cos"] = __import__("numpy").cos(2 * __import__("numpy").pi * month / 12)
-    output["target_expenses"] = groups.shift(-1)
+    output["rolling_std_3"] = groups.transform(
+        lambda values: values.shift(1).rolling(3, min_periods=3).std()
+    )
+    output["user_scale"] = output["rolling_mean_3"]
+    output["target_expenses"] = output["total_expenses"]
+    for name in ("lag_1", "lag_2", "lag_3", "rolling_std_3"):
+        output[f"{name}_ratio"] = output[name] / output["user_scale"]
+    output["target_ratio"] = output["target_expenses"] / output["user_scale"]
     return output
 
 
@@ -35,9 +44,6 @@ def engineer(processed_dir: str | Path, output_dir: str | Path) -> None:
     source, destination = Path(processed_dir), Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
     LOGGER.info("Building survey-only features from %s", source)
-    # Zero is an explicit cold-start value, not a dataset-derived replacement;
-    # it keeps feature generation streamable and avoids held-out information.
-    imputation = dict.fromkeys(FEATURE_COLUMNS, 0.0)
     for name in ("train", "val", "test"):
         LOGGER.info("Building %s features", name)
         input_file = pq.ParquetFile(source / f"{name}.parquet")
@@ -56,14 +62,16 @@ def engineer(processed_dir: str | Path, output_dir: str | Path) -> None:
                 if complete.empty:
                     continue
                 features = build_features(complete)
-                features[FEATURE_COLUMNS] = features[FEATURE_COLUMNS].fillna(imputation)
+                features = features.dropna(subset=[*FEATURE_COLUMNS, "user_scale", "target_ratio"])
+                features = features.loc[features["user_scale"] > 0]
                 table = pa.Table.from_pandas(features, preserve_index=False)
                 if writer is None:
                     writer = pq.ParquetWriter(destination / f"{name}.parquet", table.schema)
                 writer.write_table(table)
             if not carry.empty:
                 features = build_features(carry)
-                features[FEATURE_COLUMNS] = features[FEATURE_COLUMNS].fillna(imputation)
+                features = features.dropna(subset=[*FEATURE_COLUMNS, "user_scale", "target_ratio"])
+                features = features.loc[features["user_scale"] > 0]
                 table = pa.Table.from_pandas(features, preserve_index=False)
                 if writer is None:
                     writer = pq.ParquetWriter(destination / f"{name}.parquet", table.schema)
@@ -80,8 +88,7 @@ def engineer(processed_dir: str | Path, output_dir: str | Path) -> None:
         json.dumps(
             {
                 "feature_columns": FEATURE_COLUMNS,
-                "imputation": imputation,
-                "feature_provenance": "calendar features and strictly prior household months only",
+                "feature_provenance": "strictly prior household months normalized by prior 3-month mean",
                 "source_fingerprint_sha256": provenance.get("source_fingerprint_sha256"),
                 "hfce_config_fingerprint_sha256": provenance.get("hfce_config_fingerprint_sha256"),
             },

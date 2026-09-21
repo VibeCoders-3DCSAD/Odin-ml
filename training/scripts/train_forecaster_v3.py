@@ -70,9 +70,6 @@ def _classical_predictions(train: pd.DataFrame, test: pd.DataFrame) -> dict[str,
             "Only %d monthly observations available; skipping classical models", len(history)
         )
         return {}
-    test_levels = test.groupby("household_id_v3")["lag_1"].mean().clip(lower=1.0)
-    default_level = float(train["target_expenses"].mean())
-    level = test["household_id_v3"].map(test_levels).fillna(default_level).to_numpy()
     normalized = history / float(history.mean())
     predictions: dict[str, np.ndarray] = {}
     for name, factory in {
@@ -88,7 +85,9 @@ def _classical_predictions(train: pd.DataFrame, test: pd.DataFrame) -> dict[str,
             predictions[name] = np.asarray(
                 [
                     float(path.get(period, 1.0)) * user_level
-                    for period, user_level in zip(test["year_month"], level, strict=True)
+                    for period, user_level in zip(
+                        test["year_month"], test["user_scale"], strict=True
+                    )
                 ]
             )
         except Exception as error:
@@ -187,7 +186,7 @@ def train_and_evaluate(
         subset=["target_expenses"]
     )
     LOGGER.info("Loaded deterministic sample: train=%d rows, test=%d rows", len(train), len(test))
-    metrics = {"naive": _mae(test["target_expenses"], test["lag_1"].to_numpy())}
+    metrics = {"naive": _mae(test["target_expenses"], test["user_scale"].to_numpy())}
     for name, prediction in _classical_predictions(train, test).items():
         metrics[name] = _mae(test["target_expenses"], prediction)
     if run_rf:
@@ -200,8 +199,11 @@ def train_and_evaluate(
             random_state=42,
             n_jobs=rf_workers,
         )
-        model.fit(train[features], train["target_expenses"])
-        metrics["random_forest"] = _mae(test["target_expenses"], model.predict(test[features]))
+        model.fit(train[features], train["target_ratio"])
+        ratios = model.predict(test[features])
+        metrics["random_forest"] = _mae(
+            test["target_expenses"], ratios * test["user_scale"].to_numpy()
+        )
         del model
         gc.collect()
     else:

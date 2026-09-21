@@ -9,6 +9,8 @@ from pathlib import Path
 from logging_v3 import configure_logging, get_logger
 
 LOGGER = get_logger("full_comparison")
+EVALUATION_CONTRACT = "three_prior_month_user_relative_ratio_v1"
+COMPARABLE_CANDIDATES = {"naive", "random_forest"}
 
 
 def compare(output_dir: str | Path) -> dict:
@@ -18,12 +20,17 @@ def compare(output_dir: str | Path) -> dict:
         report = json.loads(path.read_text())
         if report.get("training_scope") != "full_household_corpus":
             continue
+        if report.get("evaluation_contract") != EVALUATION_CONTRACT:
+            continue
+        if report.get("candidate") not in COMPARABLE_CANDIDATES:
+            continue
         reports.append(report)
     if not reports:
-        raise FileNotFoundError("no full-corpus candidate reports found")
+        raise FileNotFoundError("no compatible normalized RF candidate reports found")
     reports.sort(key=lambda report: report["mae"])
     result = {
         "evaluation_level": "internal_synthetic_target_only",
+        "evaluation_contract": EVALUATION_CONTRACT,
         "training_scope": "full_household_corpus",
         "ranking_by_mae": reports,
         "served_forecaster_unchanged": True,

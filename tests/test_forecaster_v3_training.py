@@ -11,14 +11,16 @@ from training.scripts.train_forecaster_v3 import HAS_TORCH, train_and_evaluate
 def test_v3_evaluation_records_unreleased_synthetic_target_gate(tmp_path: Path):
     source, output = tmp_path / "features", tmp_path / "models"
     source.mkdir()
-    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1"]}))
+    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1_ratio"]}))
     for name in ("train", "val", "test"):
         pd.DataFrame(
             {
                 "household_id_v3": [name] * 3,
                 "year_month": ["2023-01", "2023-02", "2023-03"],
-                "lag_1": [1.0, 2.0, 3.0],
-                "target_expenses": [2.0, 3.0, 4.0],
+                "lag_1_ratio": [1.0, 1.0, 1.0],
+                "user_scale": [2.0, 3.0, 4.0],
+                "target_ratio": [1.25, 1.25, 1.25],
+                "target_expenses": [2.5, 3.75, 5.0],
             }
         ).to_parquet(source / f"{name}.parquet", index=False)
 
@@ -35,13 +37,15 @@ def test_v3_evaluation_records_unreleased_synthetic_target_gate(tmp_path: Path):
 def test_v3_training_can_run_the_lstm_candidate(tmp_path: Path):
     source, output = tmp_path / "features", tmp_path / "models"
     source.mkdir()
-    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1"]}))
+    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1_ratio"]}))
     for name in ("train", "val", "test"):
         pd.DataFrame(
             {
                 "household_id_v3": [name] * 4,
                 "year_month": ["2023-01", "2023-02", "2023-03", "2023-04"],
-                "lag_1": [1.0, 2.0, 3.0, 4.0],
+                "lag_1_ratio": [1.0, 1.0, 1.0, 1.0],
+                "user_scale": [2.0, 3.0, 4.0, 5.0],
+                "target_ratio": [1.0, 1.0, 1.0, 1.0],
                 "target_expenses": [2.0, 3.0, 4.0, 5.0],
             }
         ).to_parquet(source / f"{name}.parquet", index=False)

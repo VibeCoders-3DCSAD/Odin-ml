@@ -4,7 +4,7 @@ import pandas as pd
 from training.scripts.feature_engineering_forecaster_v3 import build_features
 
 
-def test_features_only_use_prior_months_and_target_is_next_month():
+def test_features_normalize_against_three_strictly_prior_months():
     frame = pd.DataFrame(
         {
             "household_id_v3": ["hh", "hh", "hh", "hh"],
@@ -14,7 +14,12 @@ def test_features_only_use_prior_months_and_target_is_next_month():
     )
     result = build_features(frame)
 
-    march = result[result["year_month"] == "2023-03"].iloc[0]
-    assert march["lag_1"] == 20.0
-    assert march["rolling_mean_3"] == 15.0
-    assert march["target_expenses"] == 40.0
+    april = result[result["year_month"] == "2023-04"].iloc[0]
+    assert april["lag_1"] == 30.0
+    assert april["user_scale"] == 20.0
+    assert april["lag_1_ratio"] == 1.5
+    assert april["lag_2_ratio"] == 1.0
+    assert april["lag_3_ratio"] == 0.5
+    assert april["rolling_std_3_ratio"] == 0.5
+    assert april["target_expenses"] == 40.0
+    assert april["target_ratio"] == 2.0

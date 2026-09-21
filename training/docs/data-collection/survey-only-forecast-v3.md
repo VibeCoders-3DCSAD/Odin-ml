@@ -9,3 +9,5 @@ V3 selects eligible 2023 FIES public-use households and retains observed annual 
 - Categories: `food`, `housing_water`, `health`, `transport`, and `education` map directly from FIES. `other = TOTEX - five direct categories`; all six categories must reconcile to `TOTEX` within PHP 0.005.
 
 Monthly amounts are synthetic allocations, not observed household transaction histories. Each available calendar-year/category allocation uses published current-price PSA HFCE quarterly shares and equal monthly splits within a quarter. V3 covers 2023-01 through 2026-06 only.
+
+The final v3 research candidate is a global Random Forest trained on user-relative spending ratios. For a target month, it uses the mean of the three strictly prior completed months as the household scale, predicts a normalized next-month ratio, then restores PHP by multiplying that ratio by the same scale. It does not include month or quarter features because equal within-quarter allocation is a synthetic source assumption, not evidence of household calendar behavior.

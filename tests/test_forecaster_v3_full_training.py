@@ -11,13 +11,15 @@ from training.scripts.train_forecaster_v3_full import run
 def test_full_corpus_naive_candidate_and_comparison(tmp_path: Path):
     source, output = tmp_path / "features", tmp_path / "models"
     source.mkdir()
-    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1"]}))
+    (source / "feature_columns.json").write_text(json.dumps({"feature_columns": ["lag_1_ratio"]}))
     for name in ("train", "test"):
         pd.DataFrame(
             {
                 "household_id_v3": [name] * 3,
                 "year_month": ["2023-01", "2023-02", "2023-03"],
-                "lag_1": [1.0, 2.0, 3.0],
+                "lag_1_ratio": [1.0, 1.0, 1.0],
+                "user_scale": [2.0, 3.0, 4.0],
+                "target_ratio": [1.0, 1.0, 1.0],
                 "target_expenses": [2.0, 3.0, 4.0],
             }
         ).to_parquet(source / f"{name}.parquet", index=False)
@@ -32,9 +34,21 @@ def test_full_corpus_naive_candidate_and_comparison(tmp_path: Path):
         lstm_epochs=1,
         lstm_patience=1,
     )
+    candidates = output / "candidates"
+    (candidates / "lstm.json").write_text(
+        json.dumps(
+            {
+                "candidate": "lstm",
+                "evaluation_contract": "three_prior_month_user_relative_ratio_v1",
+                "training_scope": "full_household_corpus",
+                "mae": 0.0,
+            }
+        )
+    )
     comparison = compare(output)
 
     assert report["training_scope"] == "full_household_corpus"
+    assert report["evaluation_contract"] == "three_prior_month_user_relative_ratio_v1"
     assert report["test_rows"] == 3
     assert comparison["ranking_by_mae"][0]["candidate"] == "naive"
 
@@ -43,15 +57,17 @@ def test_full_corpus_random_forest_streams_feature_columns(tmp_path: Path):
     source, output = tmp_path / "features", tmp_path / "models"
     source.mkdir()
     (source / "feature_columns.json").write_text(
-        json.dumps({"feature_columns": ["lag_1", "lag_2"]})
+        json.dumps({"feature_columns": ["lag_1_ratio", "lag_2_ratio"]})
     )
     for name in ("train", "test"):
         pd.DataFrame(
             {
                 "household_id_v3": [name] * 4,
                 "year_month": ["2023-01", "2023-02", "2023-03", "2023-04"],
-                "lag_1": [1.0, 2.0, 3.0, 4.0],
-                "lag_2": [0.0, 1.0, 2.0, 3.0],
+                "lag_1_ratio": [1.0, 1.0, 1.0, 1.0],
+                "lag_2_ratio": [1.0, 1.0, 1.0, 1.0],
+                "user_scale": [2.0, 3.0, 4.0, 5.0],
+                "target_ratio": [1.0, 1.0, 1.0, 1.0],
                 "target_expenses": [2.0, 3.0, 4.0, 5.0],
             }
         ).to_parquet(source / f"{name}.parquet", index=False)
@@ -68,4 +84,4 @@ def test_full_corpus_random_forest_streams_feature_columns(tmp_path: Path):
     )
 
     assert report["candidate"] == "random_forest"
-    assert report["mae"] >= 0
+    assert report["mae"] == 0
